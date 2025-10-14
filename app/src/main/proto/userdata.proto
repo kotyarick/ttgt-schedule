@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+option java_package = "ttgt.schedule.proto";
+option java_multiple_files = true;
+
+import "schedule.proto";
+import "service.proto";
+
+message LessonUserData {
+    bool isOver = 1;
+    string notes = 2;
+}
+
+message UserData {
+	Schedule schedule = 1;
+	string groupName = 2;
+	Overrides overrides = 3;
+	map<string, LessonUserData> lessonData = 4;
+}
