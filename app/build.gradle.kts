@@ -25,12 +25,26 @@ android {
             versionNameSuffix = " (debug)"
             applicationIdSuffix = ".debug"
         }
+
         release {
             isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+
+        create("teachers-debug") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".teachers.debug"
+            versionNameSuffix = " (преподавателям, debug)"
+
+        }
+
+        create("teachers-release") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".teachers"
+            versionNameSuffix = " (преподавателям)"
         }
     }
     compileOptions {
@@ -67,9 +81,6 @@ protobuf {
         }
     }
 }
-
-
-
 
 dependencies {
     implementation(libs.androidx.navigation.compose)

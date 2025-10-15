@@ -31,8 +31,7 @@ data class Time(
     val minutes: Int
 ) {
     operator fun compareTo(time: Long): Int =
-        (hours * 60 + minutes) - Date(time).let {
-            date ->
+        (hours * 60 + minutes) - Date(time).let { date ->
             date.hours * 60 + date.minutes
         }
 
@@ -50,7 +49,8 @@ data class LessonTime(
     override fun toString() = "$start - $end"
 }
 
-@Composable fun ClassHour(isCurrent: Boolean) {
+@Composable
+fun ClassHour(isCurrent: Boolean) {
     Card(
         Modifier
             .fillMaxWidth(),
@@ -88,9 +88,11 @@ fun ScheduleItem(
     index: Int,
     isCurrent: Boolean,
     timestampType: TimestampType,
+    isTeacher: Boolean,
     onClick: () -> Unit
 ) {
-    val timestampIndex = if (timestampType == TimestampType.ClassHour && index > 2) index + 1 else index
+    val timestampIndex =
+        if (timestampType == TimestampType.ClassHour && index > 2) index + 1 else index
 
     @Composable
     fun lessonName(name: String) = Text(name, fontWeight = FontWeight.Bold)
@@ -116,9 +118,11 @@ fun ScheduleItem(
             .fillMaxWidth()
             .clip(CardDefaults.shape)
             .alpha(if (lesson.hasNoLesson()) 0.5F else 1F).let {
+                return@let it
+
                 println(lesson.hasNoLesson())
                 if (lesson.hasNoLesson()) it
-                else it.clickable(onClick=onClick)
+                else it.clickable(onClick = onClick)
             },
         colors = if (isCurrent) CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer
@@ -135,51 +139,51 @@ fun ScheduleItem(
             Spacer(Modifier.width(10.dp))
 
             when {
-                    lesson.hasCommonLesson() -> {
-                        lessonText(
-                            lesson.commonLesson.name,
-                            lesson.commonLesson.teacher,
-                            lesson.commonLesson.room
-                        )
-                    }
+                lesson.hasCommonLesson() -> {
+                    lessonText(
+                        lesson.commonLesson.name,
+                        if (isTeacher) lesson.group else lesson.commonLesson.teacher,
+                        lesson.commonLesson.room
+                    )
+                }
 
-                    lesson.hasSubgroupedLesson() -> {
-                        Column(Modifier.width(200.dp)) {
-                            lessonName(lesson.subgroupedLesson.name)
-                            if (subgroup == null) {
-                                lesson.subgroupedLesson.subgroupsList.forEachIndexed { index, data ->
-                                    Row {
-                                        Text(
-                                            "${index + 1} п/г",
-                                            color = MaterialTheme.colorScheme.secondary
-                                        )
-                                        Spacer(Modifier.width(10.dp))
-                                        lessonSubtext(data.teacher, data.room)
-                                    }
-                                }
-                            } else {
+                lesson.hasSubgroupedLesson() -> {
+                    Column(Modifier.width(200.dp)) {
+                        lessonName(lesson.subgroupedLesson.name)
+                        if (subgroup == null) {
+                            lesson.subgroupedLesson.subgroupsList.forEachIndexed { index, data ->
                                 Row {
                                     Text(
-                                        "${subgroup + 1} п/г",
+                                        "${index + 1} п/г",
                                         color = MaterialTheme.colorScheme.secondary
                                     )
                                     Spacer(Modifier.width(10.dp))
-                                    lessonSubtext(
-                                        lesson.subgroupedLesson.subgroupsList[subgroup].teacher,
-                                        lesson.subgroupedLesson.subgroupsList[subgroup].room
-                                    )
+                                    lessonSubtext(data.teacher, data.room)
                                 }
+                            }
+                        } else {
+                            Row {
+                                Text(
+                                    "${subgroup + 1} п/г",
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                lessonSubtext(
+                                    lesson.subgroupedLesson.subgroupsList[subgroup].teacher,
+                                    lesson.subgroupedLesson.subgroupsList[subgroup].room
+                                )
                             }
                         }
                     }
-
-                    lesson.hasNoLesson() -> {
-                        Text(
-                            stringResource(R.string.no_lesson),
-                            color = MaterialTheme.colorScheme.secondary
-                        )
-                    }
                 }
+
+                lesson.hasNoLesson() -> {
+                    Text(
+                        stringResource(R.string.no_lesson),
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                }
+            }
 
             Spacer(Modifier.weight(1F))
 

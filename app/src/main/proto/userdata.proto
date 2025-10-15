@@ -7,13 +7,17 @@ import "schedule.proto";
 import "service.proto";
 
 message LessonUserData {
-    bool isOver = 1;
-    string notes = 2;
+  bool isOver = 1;
+  string notes = 2;
 }
 
 message UserData {
-	Schedule schedule = 1;
-	string groupName = 2;
-	Overrides overrides = 3;
-	map<string, LessonUserData> lessonData = 4;
+  Schedule schedule = 1;
+  Overrides overrides = 3;
+  map<string, LessonUserData> lessonData = 4;
+
+  oneof identity {
+    string groupName = 2;
+    string teacherName = 5;
+  }
 }

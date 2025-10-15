@@ -14,6 +14,7 @@ import androidx.datastore.dataStore
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.google.protobuf.Empty
 import com.google.protobuf.InvalidProtocolBufferException
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
@@ -25,6 +26,8 @@ import ttgt.schedule.ui.ScheduleUi
 import ttgt.schedule.ui.Welcome
 import java.io.InputStream
 import java.io.OutputStream
+
+val empty = Empty.newBuilder().build()
 
 object SettingsSerializer : Serializer<UserData> {
     override val defaultValue: UserData =

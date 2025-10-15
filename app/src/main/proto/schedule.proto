@@ -6,38 +6,40 @@ option java_multiple_files = true;
 import "google/protobuf/empty.proto";
 
 message Schedule {
-	repeated Week weeks = 1;
+  repeated Week weeks = 1;
 }
 
 message Week {
-	repeated Day days = 1;
+  repeated Day days = 1;
 }
 
 message Day {
-	repeated Lesson lesson = 1;
+  repeated Lesson lesson = 1;
 }
 
 message CommonLesson {
-	string name = 1;
-	string teacher = 2;
-	string room = 3;
+  string name = 1;
+  string teacher = 2;
+  string room = 3;
 }
 
 message SubgroupedLesson {
-	string name = 1;
-	repeated SubgroupedLessonData subgroups = 2;
+  string name = 1;
+  repeated SubgroupedLessonData subgroups = 2;
 }
 
 message SubgroupedLessonData {
-	string teacher = 1;
-	string room = 2;
-	int32 subgroup_index = 3;
+  string teacher = 1;
+  string room = 2;
+  int32 subgroup_index = 3;
 }
 
 message Lesson {
-	oneof lesson {
-		CommonLesson commonLesson = 1;
-		SubgroupedLesson subgroupedLesson = 2;
-		google.protobuf.Empty noLesson = 3;
-	}
+  oneof lesson {
+    CommonLesson commonLesson = 1;
+    SubgroupedLesson subgroupedLesson = 2;
+    google.protobuf.Empty noLesson = 3;
+  }
+
+  string group = 4;
 }

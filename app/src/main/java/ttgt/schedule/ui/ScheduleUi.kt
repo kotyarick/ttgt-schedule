@@ -37,6 +37,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.SelectableDates
@@ -77,6 +78,8 @@ import ttgt.schedule.R
 import ttgt.schedule.proto.Application
 import ttgt.schedule.proto.GroupId
 import ttgt.schedule.proto.LatestVersion
+import ttgt.schedule.proto.Lesson
+import ttgt.schedule.proto.LessonUserData
 import ttgt.schedule.proto.Overrides
 import ttgt.schedule.proto.Schedule
 import ttgt.schedule.settingsDataStore
@@ -131,9 +134,9 @@ object NoWeekendsSelectableDates : SelectableDates {
         utcTimeMillis
             .timestamp()
             .dayOfWeek !in listOf(
-                java.time.DayOfWeek.SUNDAY,
-                java.time.DayOfWeek.SATURDAY
-            )
+            java.time.DayOfWeek.SUNDAY,
+            java.time.DayOfWeek.SATURDAY
+        )
 
     override fun isSelectableYear(year: Int) = true
 }
@@ -152,9 +155,11 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
         }
     ) { TAB_AMOUNT }
     var isCurrentWeekEven by remember { mutableStateOf(weekNum()) }  // Чётная?
-    var isSelectedWeekEven by remember { mutableStateOf(
-        if (weekday() >= TAB_AMOUNT) !isCurrentWeekEven else isCurrentWeekEven
-    ) }  // Чётная?
+    var isSelectedWeekEven by remember {
+        mutableStateOf(
+            if (weekday() >= TAB_AMOUNT) !isCurrentWeekEven else isCurrentWeekEven
+        )
+    }  // Чётная?
     var schedule: Schedule? by remember { mutableStateOf(null) }
     var overrides: Overrides? by remember { mutableStateOf(null) }
     var applyOverrides by remember { mutableStateOf(true) }
@@ -165,7 +170,7 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
     val now = LocalDate.now()
 
     val datePicker = rememberDatePickerState(
-        yearRange = now.year..now.year+2,
+        yearRange = now.year..now.year + 2,
         selectableDates = NoWeekendsSelectableDates
     )
     var showDatePicker by remember { mutableStateOf(false) }
@@ -189,7 +194,20 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
 
     val snackbarHostState = remember { SnackbarHostState() }
 
-    var currentLessonName: String? by remember { mutableStateOf(null) }
+    var isTeacher by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        var a = false
+        scope.launch {
+            a = context.settingsDataStore.data.map {
+                it.hasTeacherName()
+            }.firstOrNull() ?: false
+        }.invokeOnCompletion {
+            isTeacher = a
+        }
+    }
+
+    var currentLesson: Lesson? by remember { mutableStateOf(null) }
     val lessonInfo = rememberModalBottomSheetState()
 
     val openLink = stringResource(R.string.open_overrides)
@@ -209,6 +227,7 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
             SnackbarResult.ActionPerformed -> {
                 uriHandler.openUri("https://ttgt.org/images/pdf/zamena.pdf")
             }
+
             SnackbarResult.Dismissed -> {
                 /* Handle snackbar dismissed */
             }
@@ -305,7 +324,12 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                                 uriHandler.openUri("http://185.13.47.146:50145/android.apk")
                             }
                         }, Modifier.fillMaxWidth()) {
-                            Text(stringResource(R.string.download_update, versionInfo?.versionCode ?: 0))
+                            Text(
+                                stringResource(
+                                    R.string.download_update,
+                                    versionInfo?.versionCode ?: 0
+                                )
+                            )
                         }
                     }
                 }
@@ -319,6 +343,7 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                             CircularProgressIndicator()
                         }
                     }
+
                     LoadingState.Error -> ListItem(
                         {
                             Text(stringResource(R.string.error))
@@ -326,7 +351,9 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                         trailingContent = {
                             Icon(Icons.Default.Refresh, null)
                         },
-                        modifier = Modifier.clickable { versionLoadingState = LoadingState.PreLoading }
+                        modifier = Modifier.clickable {
+                            versionLoadingState = LoadingState.PreLoading
+                        }
                     )
 
                     else -> {}
@@ -335,7 +362,7 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
         }
     }
 
-    fun checkOverrides(onDone: (Boolean)->Unit) {
+    fun checkOverrides(onDone: (Boolean) -> Unit) {
         if (overridesChecking) return
         overridesChecking = true
 
@@ -369,7 +396,7 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
         overrides = context.settingsDataStore.data.map { it.overrides }.firstOrNull()
 
         if (overrides?.takeIf { it.overridesCount > 0 } == null) {
-            checkOverrides {  }
+            checkOverrides { }
         }
 
         while (true) {
@@ -422,15 +449,72 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
     }
 
     if (lessonInfo.isVisible || lessonInfo.isAnimationRunning) {
-        currentLessonName?.let { name ->
+        currentLesson?.let { lesson ->
+            val name = lesson.commonLesson.name.ifBlank { lesson.subgroupedLesson.name }
+            var notes by remember { mutableStateOf("") }
+
             ModalBottomSheet({
                 scope.launch {
+                    context.settingsDataStore.updateData {
+                        it.toBuilder()
+                            .apply {
+                                val key = "$name ${lesson.group}"
+
+                                if (lessonDataMap.containsKey(key)) {
+                                    lessonDataMap.put(
+                                        key,
+                                        lessonDataMap
+                                            .getValue(key)
+                                            .toBuilder()
+                                            .setNotes(notes)
+                                            .build()
+                                    )
+                                } else {
+                                    putLessonData(
+                                        key,
+                                        LessonUserData
+                                            .newBuilder()
+                                            .setNotes(notes)
+                                            .build()
+                                    )
+                                }
+                            }
+                            .build()
+                    }
+
                     lessonInfo.hide()
                 }.invokeOnCompletion {
-                    currentLessonName = null
+                    currentLesson = null
                 }
             }) {
-                Text(name, style= MaterialTheme.typography.headlineSmall)
+                LaunchedEffect(Unit) {
+                    notes = context.settingsDataStore.data.map {
+                        it.lessonDataMap
+                    }.firstOrNull()?.get(name)?.notes ?: ""
+                }
+
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        name,
+                        Modifier.padding(bottom = 16.dp),
+                        style = MaterialTheme.typography.headlineSmall
+                    )
+
+                    OutlinedTextField(
+                        notes, { notes = it },
+                        Modifier
+                            .fillMaxSize(),
+                        label = {
+                            Text(
+                                stringResource(R.string.notes)
+                            )
+                        }
+                    )
+                }
             }
         }
     }
@@ -567,7 +651,8 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
         floatingActionButtonPosition = FabPosition.Center
     ) { innerPadding ->
         BackHandler {
-            isSelectedWeekEven = if (weekday() >= TAB_AMOUNT) !isCurrentWeekEven else isCurrentWeekEven
+            isSelectedWeekEven =
+                if (weekday() >= TAB_AMOUNT) !isCurrentWeekEven else isCurrentWeekEven
             scope.launch {
                 pagerState.animateScrollToPage(
                     weekday().let { weekday ->
@@ -672,11 +757,15 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                             && (weekday() == page)
 
                     items(list.size + if (timestampType == TimestampType.ClassHour) 1 else 0) { i ->
-                        val index = i - if (timestampType == TimestampType.ClassHour && i > 3) 1 else 0
+                        val index =
+                            i - if (timestampType == TimestampType.ClassHour && i > 3) 1 else 0
 
                         key(updateItems) {
                             when {
-                                timestampType == TimestampType.ClassHour && i == 3 -> ClassHour(isToday && timestampType.timestamps.getOrNull(3)?.isNow() == true)
+                                timestampType == TimestampType.ClassHour && i == 3 -> ClassHour(
+                                    isToday && timestampType.timestamps.getOrNull(3)
+                                        ?.isNow() == true
+                                )
 
                                 index < 5 || !list[index].hasNoLesson() -> ScheduleItem(
                                     list[index],
@@ -685,18 +774,12 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                                     isToday && timestampType.timestamps.getOrNull(
                                         if (timestampType == TimestampType.ClassHour && index > 2) index + 1 else index
                                     )?.isNow() == true,
-                                    timestampType
+                                    timestampType,
+                                    isTeacher
                                 ) {
                                     scope.launch {
-                                        currentLessonName = list[index]
-                                            .commonLesson
-                                            ?.name
-                                            ?.takeIf { it.isNotBlank() } ?:
-                                                list[index]
-                                                    .subgroupedLesson
-                                                    ?.name
-                                                    ?.takeIf { it.isNotBlank() }
-                                        if (currentLessonName != null) {
+                                        currentLesson = list[index]
+                                        if (currentLesson != null) {
                                             lessonInfo.show()
                                         }
                                     }
@@ -712,20 +795,21 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                         overs.weekDay == page
                     ) {
                         item {
-                            ListItem({
-                                Text(stringResource(R.string.apply_overrides))
-                            },
-                            Modifier
-                                .clip(RoundedCornerShape(14.dp))
-                                .clickable {
-                                    applyOverrides = !applyOverrides
+                            ListItem(
+                                {
+                                    Text(stringResource(R.string.apply_overrides))
                                 },
-                            leadingContent = {
-                                Checkbox(
-                                    applyOverrides,
-                                    { applyOverrides = !applyOverrides }
-                                )
-                            })
+                                Modifier
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .clickable {
+                                        applyOverrides = !applyOverrides
+                                    },
+                                leadingContent = {
+                                    Checkbox(
+                                        applyOverrides,
+                                        { applyOverrides = !applyOverrides }
+                                    )
+                                })
                         }
                     }
 
