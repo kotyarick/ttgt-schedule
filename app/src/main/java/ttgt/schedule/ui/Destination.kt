@@ -6,6 +6,7 @@ import kotlinx.serialization.Serializable
 sealed class Destination {
     @Serializable
     object Welcome : Destination()
+
     @Serializable
     object Schedule : Destination()
 }

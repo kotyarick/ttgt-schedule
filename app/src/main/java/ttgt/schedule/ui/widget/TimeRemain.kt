@@ -42,7 +42,8 @@ import ttgt.schedule.ui.TimestampType
 import ttgt.schedule.ui.weekNum
 import ttgt.schedule.ui.weekday
 
-@Composable fun stringResource(@StringRes id: Int) = LocalContext.current.getString(id)
+@Composable
+fun stringResource(@StringRes id: Int) = LocalContext.current.getString(id)
 
 class TimeRemainWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
@@ -94,7 +95,7 @@ class TimeRemainWidget : GlanceAppWidget() {
                                 .daysList[currentWeekday]
                                 .lessonList
 
-                            val timestampType = when(currentWeekday) {
+                            val timestampType = when (currentWeekday) {
                                 1 -> TimestampType.ClassHour
                                 5 -> TimestampType.Saturday
                                 else -> TimestampType.Normal
@@ -110,10 +111,12 @@ class TimeRemainWidget : GlanceAppWidget() {
 
                                 Row {
                                     when {
-                                        timestampType == TimestampType.ClassHour && i == 3 -> Text(stringResource(R.string.class_hour))
+                                        timestampType == TimestampType.ClassHour && i == 3 -> Text(
+                                            stringResource(R.string.class_hour)
+                                        )
 
                                         index < 5 || !list[index].hasNoLesson() -> {
-                                            when(lesson.lessonCase) {
+                                            when (lesson.lessonCase) {
                                                 Lesson.LessonCase.LESSON_NOT_SET,
                                                 Lesson.LessonCase.NOLESSON ->
                                                     Text(stringResource(R.string.no_lesson))
