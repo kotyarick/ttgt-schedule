@@ -11,6 +11,11 @@ message LessonUserData {
   string notes = 2;
 }
 
+message WidgetSettings {
+  float background = 1;
+  uint32 innerPadding = 2;
+}
+
 message UserData {
   Schedule schedule = 1;
   Overrides overrides = 3;
@@ -20,4 +25,6 @@ message UserData {
     string groupName = 2;
     string teacherName = 5;
   }
+
+  map<int32, WidgetSettings> widgets = 6;
 }

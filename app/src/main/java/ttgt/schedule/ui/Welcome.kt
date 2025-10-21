@@ -17,11 +17,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.NavigateNext
-import androidx.compose.material.icons.filled.Done
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.SignalWifiStatusbarConnectedNoInternet4
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.Card
@@ -61,6 +56,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import ttgt.schedule.Icon
 import ttgt.schedule.R
 import ttgt.schedule.empty
 import ttgt.schedule.proto.Group
@@ -69,6 +65,7 @@ import ttgt.schedule.proto.Teacher
 import ttgt.schedule.settingsDataStore
 import ttgt.schedule.stub
 import ttgt.schedule.ui.theme.ScheduleTheme
+import ttgt.schedule.vector
 
 
 private val uiScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -217,7 +214,7 @@ fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
                         CircularProgressIndicator(Modifier.size(20.dp))
                     } else {
                         Text(stringResource(R.string.continu))
-                        Icon(Icons.AutoMirrored.Filled.NavigateNext, null)
+                        Icon(R.drawable.next)
                     }
                 }
             }
@@ -292,7 +289,7 @@ fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
                             Modifier.fillMaxWidth(),
                             label = { Text(stringResource(R.string.search)) },
                             maxLines = 1,
-                            leadingIcon = { Icon(Icons.Default.Search, null) }
+                            leadingIcon = { Icon(R.drawable.search) }
                         )
                     }
                 }
@@ -342,7 +339,7 @@ fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
                                     ),
                                     trailingContent = {
                                         if (teacher == selectedTeacher) {
-                                            Icon(Icons.Default.Done, null)
+                                            Icon(R.drawable.done)
                                         }
                                     }
                                 )
@@ -381,7 +378,7 @@ fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
                                     ) {
                                         Box(
                                             Modifier
-                                                .padding(13.dp)
+                                                .padding(horizontal=if (selectedGroup == group.id) 10.dp else 13.dp, vertical=13.dp)
                                                 .fillMaxWidth(),
                                             contentAlignment = Alignment.Center
                                         ) {
@@ -407,7 +404,7 @@ fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
                             verticalArrangement = Arrangement.Center
                         ) {
                             Icon(
-                                Icons.Default.SignalWifiStatusbarConnectedNoInternet4,
+                                R.drawable.signal_wifi_off.vector,
                                 null,
                                 Modifier.size(50.dp)
                             )

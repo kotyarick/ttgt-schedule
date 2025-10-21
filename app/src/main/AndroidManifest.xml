@@ -24,8 +24,13 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".WidgetSettings"
+            android:theme="@style/Theme.TransparentWallpaper"
+            />
+
         <receiver
-            android:name=".ui.widget.TimeRemain"
+            android:name=".ui.widget.TimeRemainWidget"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />

@@ -1,5 +1,7 @@
 package ttgt.schedule.ui
 
+import ttgt.schedule.DayOfWeek
+
 enum class TimestampType(
     vararg val timestamps: LessonTime
 ) {
@@ -70,5 +72,15 @@ enum class TimestampType(
             Time(13, 0),
             Time(14, 30)
         )
-    )
+    );
+
+    companion object {
+        fun fromWeekday(weekday: Int) = fromWeekday(DayOfWeek.entries[weekday])
+
+        fun fromWeekday(weekday: DayOfWeek) = when (weekday) {
+            DayOfWeek.TUESDAY -> ClassHour
+            DayOfWeek.SATURDAY, DayOfWeek.SUNDAY -> Saturday
+            else -> Normal
+        }
+    }
 }

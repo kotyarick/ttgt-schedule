@@ -1,6 +1,20 @@
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:initialLayout="@layout/glance_default_loading_layout"
+
     android:minWidth="250dp"
     android:minHeight="150dp"
+
     android:minResizeWidth="250dp"
-    android:minResizeHeight="150dp"></appwidget-provider>
+    android:minResizeHeight="150dp"
+
+    android:maxResizeHeight="500dp"
+    android:maxResizeWidth="500dp"
+
+    android:resizeMode="horizontal|vertical"
+
+    android:previewLayout="@layout/widget"
+    android:configure="ttgt.schedule.WidgetSettings"
+    android:widgetFeatures="configuration_optional|reconfigurable"
+    android:updatePeriodMillis="3600000"
+    android:previewImage="@mipmap/widget_preview"
+    />

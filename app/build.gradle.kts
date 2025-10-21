@@ -14,37 +14,25 @@ android {
         applicationId = "ttgt.schedule"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "3"
+        versionCode = 4
+        versionName = "4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         debug {
+            isMinifyEnabled = false
             versionNameSuffix = " (debug)"
             applicationIdSuffix = ".debug"
         }
 
         release {
-            isMinifyEnabled = true
+            isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-        }
-
-        create("teachers-debug") {
-            initWith(getByName("debug"))
-            applicationIdSuffix = ".teachers.debug"
-            versionNameSuffix = " (преподавателям, debug)"
-
-        }
-
-        create("teachers-release") {
-            initWith(getByName("release"))
-            applicationIdSuffix = ".teachers"
-            versionNameSuffix = " (преподавателям)"
         }
     }
     compileOptions {
@@ -84,8 +72,6 @@ protobuf {
 
 dependencies {
     implementation(libs.androidx.navigation.compose)
-
-    implementation(libs.androidx.material.icons.extended)
 
     implementation(libs.androidx.datastore)
     implementation(libs.protoc)

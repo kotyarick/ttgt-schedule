@@ -1,7 +1,9 @@
 package ttgt.schedule.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -18,10 +21,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Done
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -54,6 +53,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -61,12 +61,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -74,6 +79,7 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import ttgt.schedule.DayOfWeek
+import ttgt.schedule.Icon
 import ttgt.schedule.R
 import ttgt.schedule.proto.Application
 import ttgt.schedule.proto.GroupId
@@ -82,9 +88,11 @@ import ttgt.schedule.proto.Lesson
 import ttgt.schedule.proto.LessonUserData
 import ttgt.schedule.proto.Overrides
 import ttgt.schedule.proto.Schedule
+import ttgt.schedule.proto.Teacher
 import ttgt.schedule.settingsDataStore
 import ttgt.schedule.stub
 import ttgt.schedule.ui.theme.ScheduleTheme
+import ttgt.schedule.vector
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -148,8 +156,9 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
 
+    val weekday = remember { weekday() }
     val pagerState = rememberPagerState(
-        weekday().let { weekday ->
+        weekday.let { weekday ->
             if (weekday >= TAB_AMOUNT) 0
             else weekday
         }
@@ -157,14 +166,13 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
     var isCurrentWeekEven by remember { mutableStateOf(weekNum()) }  // Чётная?
     var isSelectedWeekEven by remember {
         mutableStateOf(
-            if (weekday() >= TAB_AMOUNT) !isCurrentWeekEven else isCurrentWeekEven
+            if (weekday >= TAB_AMOUNT) !isCurrentWeekEven else isCurrentWeekEven
         )
     }  // Чётная?
     var schedule: Schedule? by remember { mutableStateOf(null) }
     var overrides: Overrides? by remember { mutableStateOf(null) }
     var applyOverrides by remember { mutableStateOf(true) }
     var overridesChecking by remember { mutableStateOf(false) }
-    var updateItems by remember { mutableStateOf(false) }
     val about = rememberModalBottomSheetState()
 
     val now = LocalDate.now()
@@ -214,6 +222,17 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
     val overridesRetrieveError = stringResource(R.string.overrides_retrieve_error)
     val noOverrides = stringResource(R.string.no_overrides)
     val overridesDetected = stringResource(R.string.overrides_detected)
+
+    val isToday = (isCurrentWeekEven == isSelectedWeekEven)
+            && (weekday == pagerState.currentPage)
+
+    val arrowRotationAnimated =  animateFloatAsState(
+        if (
+            isToday && overrides
+                ?.overridesList
+                ?.isNotEmpty() == true
+            ) 180F else 0F
+    )
 
     fun snackbar(text: String) = scope.launch {
         val result = snackbarHostState
@@ -315,7 +334,7 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                                 Text(stringResource(R.string.current_version_latest))
                             },
                             leadingContent = {
-                                Icon(Icons.Default.Done, null)
+                                Icon(R.drawable.done)
                             },
                         )
                     } else {
@@ -349,7 +368,7 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                             Text(stringResource(R.string.error))
                         },
                         trailingContent = {
-                            Icon(Icons.Default.Refresh, null)
+                            Icon(R.drawable.refresh)
                         },
                         modifier = Modifier.clickable {
                             versionLoadingState = LoadingState.PreLoading
@@ -368,11 +387,22 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
 
         scope.launch(Dispatchers.IO) {
             runCatching {
-                stub.getOverrides(
-                    GroupId.newBuilder()
-                        .setId(context.settingsDataStore.data.map { it.groupName }.firstOrNull())
-                        .build()
-                )
+                val groupName = context.settingsDataStore.data.map { it.groupName }.firstOrNull()
+                val teacherName = context.settingsDataStore.data.map { it.teacherName }.firstOrNull()
+
+                if (groupName?.isNotBlank() == true) {
+                    stub.getOverrides(
+                        GroupId.newBuilder()
+                            .setId(groupName)
+                            .build()
+                    )
+                } else {
+                    stub.getTeacherOverrides(
+                        Teacher.newBuilder()
+                            .setName(teacherName)
+                            .build()
+                    )
+                }
             }.apply {
                 exceptionOrNull()?.printStackTrace()
 
@@ -381,12 +411,37 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                     overridesChecking = false
                     onDone(isFailure)
                 }
-
-                overrides?.let { overrides ->
+                if (isSuccess) {
                     context.settingsDataStore.updateData {
-                        it.toBuilder().setOverrides(overrides).build()
+                        it.toBuilder().setOverrides(overrides ?: Overrides.newBuilder().build()).build()
                     }
                 }
+            }
+        }
+    }
+
+    fun backPress() {
+        if (isToday && (overrides?.overridesCount ?: 0) > 0) {
+            overrides?.let { overrides ->
+                isSelectedWeekEven = overrides.weekNum == 1
+
+                scope.launch {
+                    pagerState.animateScrollToPage(
+                        overrides.weekDay
+                    )
+                }
+            }
+        } else {
+            isSelectedWeekEven =
+                if (weekday >= TAB_AMOUNT) !isCurrentWeekEven else isCurrentWeekEven
+
+            scope.launch {
+                pagerState.animateScrollToPage(
+                    weekday.let { weekday ->
+                        if (weekday >= pagerState.pageCount) 0
+                        else weekday
+                    }
+                )
             }
         }
     }
@@ -396,12 +451,9 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
         overrides = context.settingsDataStore.data.map { it.overrides }.firstOrNull()
 
         if (overrides?.takeIf { it.overridesCount > 0 } == null) {
-            checkOverrides { }
-        }
+            checkOverrides {
 
-        while (true) {
-            updateItems = !updateItems
-            delay(1000)
+            }
         }
     }
 
@@ -452,16 +504,15 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
         currentLesson?.let { lesson ->
             val name = lesson.commonLesson.name.ifBlank { lesson.subgroupedLesson.name }
             var notes by remember { mutableStateOf("") }
+            val key = "$name ${lesson.group}"
 
             ModalBottomSheet({
                 scope.launch {
                     context.settingsDataStore.updateData {
                         it.toBuilder()
                             .apply {
-                                val key = "$name ${lesson.group}"
-
                                 if (lessonDataMap.containsKey(key)) {
-                                    lessonDataMap.put(
+                                    putLessonData(
                                         key,
                                         lessonDataMap
                                             .getValue(key)
@@ -490,7 +541,7 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                 LaunchedEffect(Unit) {
                     notes = context.settingsDataStore.data.map {
                         it.lessonDataMap
-                    }.firstOrNull()?.get(name)?.notes ?: ""
+                    }.firstOrNull()?.takeIf { it.containsKey(key) }?.get(key)?.notes ?: ""
                 }
 
                 Column(
@@ -503,6 +554,15 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                         Modifier.padding(bottom = 16.dp),
                         style = MaterialTheme.typography.headlineSmall
                     )
+                    if (isTeacher) {
+                        Text(
+                            lesson.group,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6F)
+                        )
+                    }
+
+                    Spacer(Modifier.height(8.dp))
 
                     OutlinedTextField(
                         notes, { notes = it },
@@ -550,16 +610,9 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
 
                 var showMenu by remember { mutableStateOf(false) }
                 IconButton({ showMenu = true }) {
-                    Icon(Icons.Default.MoreVert, null)
+                    Icon(R.drawable.more)
 
                     DropdownMenu(showMenu, { showMenu = false }) {
-                        DropdownMenuItem({
-                            Text(stringResource(R.string.jump_to_date_title))
-                        }, {
-                            showMenu = false
-                            showDatePicker = true
-                        })
-
                         DropdownMenuItem({
                             if (overridesChecking) {
                                 Row(
@@ -605,63 +658,83 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                 }
             }
         },
-        floatingActionButton = {
-            ExtendedFloatingActionButton({ isSelectedWeekEven = !isSelectedWeekEven }) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Box(Modifier.size(30.dp), contentAlignment = Alignment.Center) {
-                        Image(
-                            painterResource(
-                                if (isSelectedWeekEven)
-                                    R.drawable.timer_2_24px
-                                else R.drawable.timer_1_24px
-                            ),
-                            null,
-                            colorFilter = ColorFilter.tint(
-                                MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        )
-                    }
-                    Column {
-                        Text(
-                            stringResource(
-                                if (isSelectedWeekEven)
-                                    R.string.second_week
-                                else
-                                    R.string.first_week
-                            ),
-                            style = MaterialTheme.typography.labelLarge
-                        )
+        bottomBar = {
+            Row(
+                Modifier
+                    .navigationBarsPadding()
+                    .padding(16.dp)
+                    .fillMaxWidth()
+                    .background(Color.Transparent),
+                Arrangement.SpaceAround,
+                Alignment.CenterVertically
+            ) {
+                val enableBack = !isToday || (overrides?.overridesCount ?: 0) > 0
 
-                        Text(
-                            stringResource(
-                                if (isSelectedWeekEven == isCurrentWeekEven)
-                                    R.string.current_week
-                                else
-                                    R.string.next_week
-                            ),
-                            style = MaterialTheme.typography.bodyMedium
+                IconButton(
+                    ::backPress,
+                    enabled = enableBack
+                ) {
+                    if (enableBack) {
+                        Icon(
+                            R.drawable.arrow.vector,
+                            null,
+                            Modifier.rotate(arrowRotationAnimated.value)
                         )
                     }
                 }
-            }
-        },
-        floatingActionButtonPosition = FabPosition.Center
-    ) { innerPadding ->
-        BackHandler {
-            isSelectedWeekEven =
-                if (weekday() >= TAB_AMOUNT) !isCurrentWeekEven else isCurrentWeekEven
-            scope.launch {
-                pagerState.animateScrollToPage(
-                    weekday().let { weekday ->
-                        if (weekday >= pagerState.pageCount) 0
-                        else weekday
+
+                ExtendedFloatingActionButton({ isSelectedWeekEven = !isSelectedWeekEven }) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Box(Modifier.size(30.dp), contentAlignment = Alignment.Center) {
+                            Image(
+                                painterResource(
+                                    if (isSelectedWeekEven)
+                                        R.drawable.timer_2_24px
+                                    else R.drawable.timer_1_24px
+                                ),
+                                null,
+                                colorFilter = ColorFilter.tint(
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            )
+                        }
+
+                        Column {
+                            Text(
+                                stringResource(
+                                    if (isSelectedWeekEven)
+                                        R.string.second_week
+                                    else
+                                        R.string.first_week
+                                ),
+                                style = MaterialTheme.typography.labelLarge
+                            )
+
+                            Text(
+                                stringResource(
+                                    if (isSelectedWeekEven == isCurrentWeekEven)
+                                        R.string.current_week
+                                    else
+                                        R.string.next_week
+                                ),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
                     }
-                )
+                }
+
+                IconButton({
+                    showDatePicker = true
+                }) {
+                    Icon(R.drawable.calendar)
+                }
             }
         }
+    ) { innerPadding ->
+        BackHandler(onBack = ::backPress)
 
         HorizontalPager(
             pagerState,
@@ -748,40 +821,32 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                         Spacer(Modifier.height(0.dp))
                     }
 
-                    val timestampType = when (page) {
-                        1 -> TimestampType.ClassHour
-                        5 -> TimestampType.Saturday
-                        else -> TimestampType.Normal
-                    }
-                    val isToday = (isCurrentWeekEven == isSelectedWeekEven)
-                            && (weekday() == page)
+                    val timestampType = TimestampType.fromWeekday(page)
 
                     items(list.size + if (timestampType == TimestampType.ClassHour) 1 else 0) { i ->
                         val index =
                             i - if (timestampType == TimestampType.ClassHour && i > 3) 1 else 0
 
-                        key(updateItems) {
-                            when {
-                                timestampType == TimestampType.ClassHour && i == 3 -> ClassHour(
-                                    isToday && timestampType.timestamps.getOrNull(3)
-                                        ?.isNow() == true
-                                )
+                        when {
+                            timestampType == TimestampType.ClassHour && i == 3 -> ClassHour(
+                                isToday && timestampType.timestamps.getOrNull(3)
+                                    ?.isNow() == true
+                            )
 
-                                index < 5 || !list[index].hasNoLesson() -> ScheduleItem(
-                                    list[index],
-                                    null,
-                                    index,
-                                    isToday && timestampType.timestamps.getOrNull(
-                                        if (timestampType == TimestampType.ClassHour && index > 2) index + 1 else index
-                                    )?.isNow() == true,
-                                    timestampType,
-                                    isTeacher
-                                ) {
-                                    scope.launch {
-                                        currentLesson = list[index]
-                                        if (currentLesson != null) {
-                                            lessonInfo.show()
-                                        }
+                            index < 5 || !list[index].hasNoLesson() -> ScheduleItem(
+                                list[index],
+                                null,
+                                index,
+                                isToday && timestampType.timestamps.getOrNull(
+                                    if (timestampType == TimestampType.ClassHour && index > 2) index + 1 else index
+                                )?.isNow() == true,
+                                timestampType,
+                                isTeacher
+                            ) {
+                                scope.launch {
+                                    currentLesson = list[index]
+                                    if (currentLesson != null) {
+                                        lessonInfo.show()
                                     }
                                 }
                             }
@@ -811,10 +876,6 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                                     )
                                 })
                         }
-                    }
-
-                    item {
-                        Spacer(Modifier.height(56.dp))
                     }
                 }
             }

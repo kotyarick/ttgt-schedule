@@ -64,6 +64,7 @@ service Server {
   rpc GetTeacherSchedule(Teacher) returns (Schedule);
   rpc GetTeachers(google.protobuf.Empty) returns (Teachers);
   rpc GetOverrides(GroupId) returns (Overrides);
+  rpc GetTeacherOverrides(Teacher) returns (Overrides);
   rpc GetLatestVersion(Application) returns (LatestVersion);
   rpc DownloadLatestVersion(Application) returns (LatestVersionDownload);
 }

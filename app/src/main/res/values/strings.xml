@@ -42,4 +42,8 @@
     <string name="search">Поиск</string>
     <string name="login_as_student">"Войти как студент "</string>
     <string name="teacher_selection">Выберите преподавателя</string>
+    <string name="notes_short">Заметки</string>
+    <string name="alpha">Непрозрачность</string>
+    <string name="padding">Отступ</string>
+    <string name="save">Сохранить</string>
 </resources>
