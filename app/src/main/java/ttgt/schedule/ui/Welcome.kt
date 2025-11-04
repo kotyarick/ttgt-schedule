@@ -1,5 +1,6 @@
 package ttgt.schedule.ui
 
+import android.content.pm.ApplicationInfo
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -27,6 +28,7 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FabPosition
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -56,11 +58,15 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import ttgt.schedule.DEFAULT_IP
+import ttgt.schedule.DEFAULT_PORT
 import ttgt.schedule.Icon
 import ttgt.schedule.R
+import ttgt.schedule.createGrpcChannel
 import ttgt.schedule.empty
 import ttgt.schedule.proto.Group
 import ttgt.schedule.proto.GroupId
+import ttgt.schedule.proto.ServerGrpc
 import ttgt.schedule.proto.Teacher
 import ttgt.schedule.settingsDataStore
 import ttgt.schedule.stub
@@ -117,14 +123,43 @@ fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
     Scaffold(
         topBar = {
             TopAppBar({
-                Text(
-                    stringResource(
-                        when (loginAs) {
-                            UserType.Student -> R.string.group_selection
-                            UserType.Teacher -> R.string.teacher_selection
+                if (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+                    var ip by remember { mutableStateOf(DEFAULT_IP) }
+                    var port by remember { mutableIntStateOf(DEFAULT_PORT) }
+
+                    Row {
+                        TextField(
+                            ip, { ip = it },
+                            Modifier.weight(1F)
+                        )
+                        TextField(
+                            port.toString(),
+                            {
+                                it
+                                    .filter { it.isDigit() }
+                                    .toIntOrNull()
+                                    ?.let { port = it }
+                            },
+                            Modifier.weight(0.5F)
+                        )
+                        IconButton({
+                            stub = ServerGrpc.newBlockingStub(
+                                createGrpcChannel(context, ip, port)
+                            )
+                        }) {
+                            Icon(R.drawable.done)
                         }
-                    ),
-                )
+                    }
+                } else {
+                    Text(
+                        stringResource(
+                            when (loginAs) {
+                                UserType.Student -> R.string.group_selection
+                                UserType.Teacher -> R.string.teacher_selection
+                            }
+                        ),
+                    )
+                }
             })
         },
         floatingActionButton = {
@@ -160,11 +195,11 @@ fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
                                         context.settingsDataStore.updateData {
                                             it.toBuilder()
                                                 .setSchedule(result)
-                                                .setGroupName(groups.first { it.id == selectedGroup }.name)
-                                                .let {
+                                                .setGroupName(groups.first { group -> group.id == selectedGroup }.name)
+                                                .let { builder ->
                                                     if (overrides != null)
-                                                        it.setOverrides(overrides)
-                                                    else it
+                                                        builder.setOverrides(overrides)
+                                                    else builder
                                                 }
                                                 .build()
                                         }
@@ -378,7 +413,10 @@ fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
                                     ) {
                                         Box(
                                             Modifier
-                                                .padding(horizontal=if (selectedGroup == group.id) 10.dp else 13.dp, vertical=13.dp)
+                                                .padding(
+                                                    horizontal = if (selectedGroup == group.id) 10.dp else 13.dp,
+                                                    vertical = 13.dp
+                                                )
                                                 .fillMaxWidth(),
                                             contentAlignment = Alignment.Center
                                         ) {

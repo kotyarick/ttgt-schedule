@@ -34,16 +34,17 @@
     <string name="current_version_latest">Установлена последняя версия</string>
     <string name="download_update">Установить обновление (версия %1$d)</string>
     <string name="open_overrides">На сайт</string>
-    <string name="jump_to_date_title">Перейти к дате…</string>
     <string name="cancel">Отмена</string>
     <string name="jump_to_date_confirm">Перейти</string>
     <string name="notes">Заметки к паре</string>
     <string name="login_as_teacher">Войти как преподаватель</string>
     <string name="search">Поиск</string>
-    <string name="login_as_student">"Войти как студент "</string>
+    <string name="login_as_student">Войти как студент</string>
     <string name="teacher_selection">Выберите преподавателя</string>
-    <string name="notes_short">Заметки</string>
     <string name="alpha">Непрозрачность</string>
     <string name="padding">Отступ</string>
     <string name="save">Сохранить</string>
+    <string name="lesson_name">Название пары</string>
+    <string name="time">Время</string>
+    <string name="subgroup">Подгруппа:</string>
 </resources>

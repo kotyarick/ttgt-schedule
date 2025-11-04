@@ -1,11 +1,9 @@
 package ttgt.schedule
 
-import android.app.WallpaperManager
+import android.annotation.SuppressLint
 import android.appwidget.AppWidgetManager
 import android.content.Intent
-import android.graphics.drawable.BitmapDrawable
 import android.os.Bundle
-import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.LinearLayout
@@ -13,14 +11,11 @@ import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.annotation.StringRes
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -28,7 +23,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -43,18 +37,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.util.TypedValueCompat.dpToPx
-import androidx.glance.LocalContext
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
 import ttgt.schedule.ui.TimestampType
-import ttgt.schedule.ui.widget.TimeRemainWidget
+import ttgt.schedule.ui.widgets.ScheduleWidget
 
 @Composable fun Range(
     @StringRes label: Int,
@@ -77,6 +69,7 @@ import ttgt.schedule.ui.widget.TimeRemainWidget
 class WidgetSettings : ComponentActivity() {
     var appWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID
 
+    @SuppressLint("InflateParams")
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -115,7 +108,7 @@ class WidgetSettings : ComponentActivity() {
                         AndroidView<View>(
                             { context ->
                                 LayoutInflater.from(context)
-                                    .inflate(R.layout.widget, null, false)
+                                    .inflate(R.layout.schedule_widget, null, false)
                                     .apply {
                                         val lessonList: LinearLayout = findViewById(R.id.lesson_list)
                                         findViewById<TextView>(R.id.today).text = "Понедельник, первая неделя"
@@ -233,7 +226,7 @@ class WidgetSettings : ComponentActivity() {
     private fun confirm() {
         println("$appWidgetId from other saver")
 
-        TimeRemainWidget().onUpdate(
+        ScheduleWidget().onUpdate(
             this,
             AppWidgetManager.getInstance(this),
             intArrayOf(appWidgetId)
@@ -247,11 +240,6 @@ class WidgetSettings : ComponentActivity() {
             RESULT_OK,
             resultValue
         )
-        finish()
-    }
-
-    private fun cancel() {
-        setResult(RESULT_CANCELED)
         finish()
     }
 }

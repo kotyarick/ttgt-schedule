@@ -1,5 +1,5 @@
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:initialLayout="@layout/glance_default_loading_layout"
+    android:initialLayout="@layout/schedule_widget"
 
     android:minWidth="250dp"
     android:minHeight="150dp"
@@ -12,7 +12,7 @@
 
     android:resizeMode="horizontal|vertical"
 
-    android:previewLayout="@layout/widget"
+    android:previewLayout="@layout/schedule_widget"
     android:configure="ttgt.schedule.WidgetSettings"
     android:widgetFeatures="configuration_optional|reconfigurable"
     android:updatePeriodMillis="3600000"

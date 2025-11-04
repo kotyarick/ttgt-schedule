@@ -2,7 +2,6 @@ package ttgt.schedule
 
 import android.appwidget.AppWidgetManager
 import android.content.Context
-import android.graphics.drawable.Drawable
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -29,18 +28,38 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import ttgt.schedule.proto.Lesson
+import ttgt.schedule.proto.LessonUserData
 import ttgt.schedule.proto.Overrides
 import ttgt.schedule.proto.ServerGrpc
 import ttgt.schedule.proto.UserData
 import ttgt.schedule.ui.Destination
 import ttgt.schedule.ui.ScheduleUi
 import ttgt.schedule.ui.Welcome
-import ttgt.schedule.ui.widget.TimeRemainWidget
+import ttgt.schedule.ui.widgets.ScheduleWidget
 import java.io.InputStream
 import java.io.OutputStream
 
-val empty = Empty.newBuilder().build()
-val noLesson = Lesson.newBuilder().setNoLesson(empty).build()
+val empty: Empty = Empty.newBuilder().build()
+
+fun Lesson.isEmpty() = lessonCase in listOf(
+    Lesson.LessonCase.LESSON_NOT_SET,
+    Lesson.LessonCase.NOLESSON
+)
+
+val Lesson.name: String
+    get() = commonLesson.name.ifBlank {
+        subgroupedLesson.name
+    }
+
+val Lesson.datastoreKey: String
+    get() = "$name $group"
+
+suspend fun Context.getLessonData(lesson: Lesson): LessonUserData? =
+    settingsDataStore.data.map {
+        it.lessonDataMap
+    }.firstOrNull()
+        ?.takeIf { it.containsKey(lesson.datastoreKey) }
+        ?.getValue(lesson.datastoreKey)
 
 object SettingsSerializer : Serializer<UserData> {
     override val defaultValue: UserData =
@@ -75,6 +94,18 @@ fun Icon(@DrawableRes drawable: Int) =
 val Int.vector: ImageVector
     get() = ImageVector.vectorResource(this)
 
+suspend fun Context.updateWidgets() {
+    val widgets = settingsDataStore.data.map {
+        it.widgetsMap
+    }.firstOrNull()?.keys ?: emptyList<Int>()
+
+    ScheduleWidget().onUpdate(
+        this,
+        AppWidgetManager.getInstance(this),
+        widgets.toIntArray()
+    )
+}
+
 class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -102,15 +133,7 @@ class MainActivity : ComponentActivity() {
                                     .build()
                             }
 
-                            val widgets = context.settingsDataStore.data.map {
-                                it.widgetsMap
-                            }.firstOrNull()?.keys ?: emptyList<Int>()
-
-                            TimeRemainWidget().onUpdate(
-                                this@MainActivity,
-                                AppWidgetManager.getInstance(this@MainActivity),
-                                widgets.toIntArray()
-                            )
+                            context.updateWidgets()
                         }
 
                         navController.navigate(Destination.Schedule) {

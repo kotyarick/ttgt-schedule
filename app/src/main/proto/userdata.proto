@@ -9,6 +9,7 @@ import "service.proto";
 message LessonUserData {
   bool isOver = 1;
   string notes = 2;
+  uint32 subgroup = 3;
 }
 
 message WidgetSettings {

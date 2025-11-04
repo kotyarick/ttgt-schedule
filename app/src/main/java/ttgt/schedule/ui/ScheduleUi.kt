@@ -1,5 +1,6 @@
 package ttgt.schedule.ui
 
+import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
@@ -22,6 +23,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
@@ -30,7 +32,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.FabPosition
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -52,8 +53,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -68,82 +68,87 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import ttgt.schedule.DayOfWeek
 import ttgt.schedule.Icon
 import ttgt.schedule.R
+import ttgt.schedule.datastoreKey
+import ttgt.schedule.dayOfWeek
+import ttgt.schedule.getLessonData
+import ttgt.schedule.isEmpty
 import ttgt.schedule.proto.Application
 import ttgt.schedule.proto.GroupId
 import ttgt.schedule.proto.LatestVersion
 import ttgt.schedule.proto.Lesson
 import ttgt.schedule.proto.LessonUserData
+import ttgt.schedule.proto.LessonUserDataOrBuilder
 import ttgt.schedule.proto.Overrides
 import ttgt.schedule.proto.Schedule
 import ttgt.schedule.proto.Teacher
 import ttgt.schedule.settingsDataStore
 import ttgt.schedule.stub
 import ttgt.schedule.ui.theme.ScheduleTheme
+import ttgt.schedule.updateWidgets
 import ttgt.schedule.vector
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneId
+import ttgt.schedule.year
 import java.util.Calendar
 import kotlin.time.ExperimentalTime
 
-
 const val TAB_AMOUNT = 5
-val startOfYear: LocalDate = LocalDate.of(2025, 1, 1)
 
-fun weekNum() = weekNum(LocalDate.now())
+val startOfYear: Calendar = Calendar.getInstance().apply {
+    set(Calendar.YEAR, 2025)
+    set(Calendar.DAY_OF_YEAR, 1)
+}
 
-fun weekNum(inputDate: LocalDate): Boolean {
-    val date = inputDate.minusDays(1)
+fun weekNum() = weekNum(
+    Calendar.getInstance()
+)
+
+fun weekNum(inputDate: Calendar): Boolean {
+    //inputDate.add(Calendar.DAY_OF_YEAR, -1)
     var out = true
 
-    var currentDate = startOfYear
-    while (currentDate.isBefore(date) || currentDate.isEqual(date)) {
-        if (currentDate.dayOfWeek == java.time.DayOfWeek.SUNDAY) {
+    val currentDate = Calendar.getInstance().apply { time = startOfYear.time }
+
+    while (currentDate.before(inputDate) || currentDate.equals(inputDate)) {
+        if (currentDate.dayOfWeek == DayOfWeek.SUNDAY.ordinal) {
             out = !out
         }
-        currentDate = currentDate.plusDays(1)
+
+        currentDate.add(Calendar.DAY_OF_YEAR, 1)
     }
 
     return out
 }
 
-fun weekday() = (
+fun weekday() =
         Calendar
             .getInstance()
-            .get(Calendar.DAY_OF_WEEK) - 1
-        ).let { if (it == 0) 6 else it - 1 }
+            .dayOfWeek
 
 enum class LoadingState {
     PreLoading, Loading, Error, Done
 }
 
-fun Long.timestamp(): LocalDate = Instant
-    .ofEpochMilli(this)
-    .atZone(ZoneId.systemDefault())
-    .toLocalDate()!!
+fun Long.timestamp(): Calendar = Calendar.getInstance().apply {
+    timeInMillis = this@timestamp
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 object NoWeekendsSelectableDates : SelectableDates {
     @OptIn(ExperimentalTime::class)
     override fun isSelectableDate(utcTimeMillis: Long) =
-        utcTimeMillis
+        DayOfWeek.entries.toTypedArray()[utcTimeMillis
             .timestamp()
-            .dayOfWeek !in listOf(
-            java.time.DayOfWeek.SUNDAY,
-            java.time.DayOfWeek.SATURDAY
+            .dayOfWeek] !in listOf(
+            DayOfWeek.SUNDAY,
+            DayOfWeek.SATURDAY
         )
 
     override fun isSelectableYear(year: Int) = true
@@ -175,7 +180,7 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
     var overridesChecking by remember { mutableStateOf(false) }
     val about = rememberModalBottomSheetState()
 
-    val now = LocalDate.now()
+    val now = Calendar.getInstance()
 
     val datePicker = rememberDatePickerState(
         yearRange = now.year..now.year + 2,
@@ -478,7 +483,7 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                         datePicker.selectedDateMillis?.timestamp()?.let { date ->
                             scope.launch {
                                 isSelectedWeekEven = weekNum(date)
-                                pagerState.animateScrollToPage(DayOfWeek.from(date.dayOfWeek).ordinal)
+                                pagerState.animateScrollToPage(date.dayOfWeek)
                             }
                         }
                     }) {
@@ -504,33 +509,39 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
         currentLesson?.let { lesson ->
             val name = lesson.commonLesson.name.ifBlank { lesson.subgroupedLesson.name }
             var notes by remember { mutableStateOf("") }
-            val key = "$name ${lesson.group}"
+            var subgroup by remember { mutableIntStateOf(0) }
+
+            suspend fun updateLesson(setData: LessonUserData.Builder.() -> Unit) {
+                context.settingsDataStore.updateData {
+                    it.toBuilder()
+                        .apply {
+                            if (lessonDataMap.containsKey(lesson.datastoreKey)) {
+                                putLessonData(
+                                    lesson.datastoreKey,
+                                    lessonDataMap
+                                        .getValue(lesson.datastoreKey)
+                                        .toBuilder()
+                                        .apply { setData() }
+                                        .build()
+                                )
+                            } else {
+                                putLessonData(
+                                    lesson.datastoreKey,
+                                    LessonUserData
+                                        .newBuilder()
+                                        .apply { setData() }
+                                        .build()
+                                )
+                            }
+                        }
+                        .build()
+                }
+            }
 
             ModalBottomSheet({
                 scope.launch {
-                    context.settingsDataStore.updateData {
-                        it.toBuilder()
-                            .apply {
-                                if (lessonDataMap.containsKey(key)) {
-                                    putLessonData(
-                                        key,
-                                        lessonDataMap
-                                            .getValue(key)
-                                            .toBuilder()
-                                            .setNotes(notes)
-                                            .build()
-                                    )
-                                } else {
-                                    putLessonData(
-                                        key,
-                                        LessonUserData
-                                            .newBuilder()
-                                            .setNotes(notes)
-                                            .build()
-                                    )
-                                }
-                            }
-                            .build()
+                    updateLesson {
+                        setNotes(notes)
                     }
 
                     lessonInfo.hide()
@@ -539,9 +550,10 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                 }
             }) {
                 LaunchedEffect(Unit) {
-                    notes = context.settingsDataStore.data.map {
-                        it.lessonDataMap
-                    }.firstOrNull()?.takeIf { it.containsKey(key) }?.get(key)?.notes ?: ""
+                    context.getLessonData(lesson)?.let { data ->
+                        notes = data.notes
+                        subgroup = data.subgroup
+                    }
                 }
 
                 Column(
@@ -563,6 +575,49 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                     }
 
                     Spacer(Modifier.height(8.dp))
+
+                    lesson
+                        .subgroupedLesson
+                        .subgroupsCount
+                        .takeIf { it > 0 }
+                        ?.let { count ->
+                            Row(
+                                Modifier
+                                    .fillMaxWidth(),
+                                Arrangement.spacedBy(8.dp),
+                                Alignment.CenterVertically
+                            ) {
+                                Text(stringResource(R.string.subgroup))
+
+                                repeat(count) { i ->
+                                    val index = i + 1
+
+                                    Button({
+                                        scope.launch {
+                                            updateLesson {
+                                                setSubgroup(index)
+                                            }
+
+                                            context.updateWidgets()
+                                        }.invokeOnCompletion {
+                                            subgroup = index
+                                        }
+                                    }, colors = if (index == subgroup) ButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                                        disabledContainerColor = Color.Transparent,
+                                        disabledContentColor = Color.Transparent
+                                    ) else ButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                        contentColor = MaterialTheme.colorScheme.onSurface,
+                                        disabledContainerColor = Color.Transparent,
+                                        disabledContentColor = Color.Transparent
+                                    )) {
+                                        Text(index.toString())
+                                    }
+                                }
+                            }
+                        }
 
                     OutlinedTextField(
                         notes, { notes = it },
@@ -742,6 +797,9 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                 .fillMaxSize()
                 .padding(innerPadding)
         ) { page ->
+            val isToday = (isCurrentWeekEven == isSelectedWeekEven)
+                    && (weekday == page)
+
             if (schedule == null) {
                 Box(
                     Modifier.fillMaxSize(),
@@ -761,65 +819,68 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                 ) {
                     val overs = overrides  // Allow smart cast
 
-                    val sched: Schedule = if (applyOverrides && overs != null) schedule.let {
-                        it
-                            .toBuilder()
-                            .setWeeks(
-                                overs.weekNum,
-                                it.weeksList[overs.weekNum]
-                                    .toBuilder()
-                                    .setDays(
-                                        overs.weekDay,
-                                        it.weeksList[overs.weekNum].daysList[overs.weekDay]
-                                            .toBuilder()
-                                            .let { day ->
-                                                overs.overridesList.forEach { over ->
-                                                    //TODO: subgrouped lesson shit
+                    val sched: Schedule = if (applyOverrides && overs != null) {
+                        schedule.let {
+                            it
+                                .toBuilder()
+                                .setWeeks(
+                                    overs.weekNum,
+                                    it.weeksList[overs.weekNum]
+                                        .toBuilder()
+                                        .setDays(
+                                            overs.weekDay,
+                                            it.weeksList[overs.weekNum].daysList[overs.weekDay]
+                                                .toBuilder()
+                                                .let { day ->
+                                                    overs.overridesList.forEach { over ->
+                                                        //TODO: subgrouped lesson shit
 
-                                                    /*if (
-                                                        day
-                                                            .lessonList
-                                                            .getOrNull(over.index)
-                                                            ?.hasSubgroupedLesson() == true
-                                                        && over.willBe.hasSubgroupedLesson()
-                                                    ) {
-                                                        day.setLesson(
-                                                            over.index,
-                                                            Lesson.newBuilder()
-                                                                .setSubgroupedLesson(
-                                                                    SubgroupedLesson.newBuilder()
-                                                                        .let { sublesson ->
-                                                                            over.willBe.subgroupedLesson
+                                                        /*if (
+                                                            day
+                                                                .lessonList
+                                                                .getOrNull(over.index)
+                                                                ?.hasSubgroupedLesson() == true
+                                                            && over.willBe.hasSubgroupedLesson()
+                                                        ) {
+                                                            day.setLesson(
+                                                                over.index,
+                                                                Lesson.newBuilder()
+                                                                    .setSubgroupedLesson(
+                                                                        SubgroupedLesson.newBuilder()
+                                                                            .let { sublesson ->
+                                                                                over.willBe.subgroupedLesson
 
-                                                                            sublesson
-                                                                        }
-                                                                        .build()
-                                                                )
-                                                                .build()
-                                                        )
-                                                    } else {
+                                                                                sublesson
+                                                                            }
+                                                                            .build()
+                                                                    )
+                                                                    .build()
+                                                            )
+                                                        } else {
 
-                                                    }*/
+                                                        }*/
 
-                                                    day.setLesson(over.index, over.willBe)
+                                                        day.setLesson(over.index, over.willBe)
+                                                    }
+                                                    day
                                                 }
-                                                day
-                                            }
-                                            .build()
-                                    )
-                                    .build()
-                            )
-                            .build()
-                    } else schedule
+                                                .build()
+                                        )
+                                        .build()
+                                )
+                                .build()
+                        }
+                    } else {
+                        schedule
+                    }
 
                     val list = sched
                         .weeksList[if (isSelectedWeekEven) 1 else 0]
                         .daysList[page]
                         .lessonList
 
-                    item {
-                        Spacer(Modifier.height(0.dp))
-                    }
+                    // Отступ сверху
+                    item { Box {} }
 
                     val timestampType = TimestampType.fromWeekday(page)
 
@@ -833,13 +894,10 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                                     ?.isNow() == true
                             )
 
-                            index < 5 || !list[index].hasNoLesson() -> ScheduleItem(
+                            index < 5 || !list[index].isEmpty() -> ScheduleItem(
                                 list[index],
-                                null,
                                 index,
-                                isToday && timestampType.timestamps.getOrNull(
-                                    if (timestampType == TimestampType.ClassHour && index > 2) index + 1 else index
-                                )?.isNow() == true,
+                                isToday,
                                 timestampType,
                                 isTeacher
                             ) {
