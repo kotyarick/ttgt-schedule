@@ -54,6 +54,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import io.grpc.okhttp.OkHttpChannelBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -62,7 +63,6 @@ import ttgt.schedule.DEFAULT_IP
 import ttgt.schedule.DEFAULT_PORT
 import ttgt.schedule.Icon
 import ttgt.schedule.R
-import ttgt.schedule.createGrpcChannel
 import ttgt.schedule.empty
 import ttgt.schedule.proto.Group
 import ttgt.schedule.proto.GroupId
@@ -144,8 +144,10 @@ fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
                         )
                         IconButton({
                             stub = ServerGrpc.newBlockingStub(
-                                createGrpcChannel(context, ip, port)
+                                OkHttpChannelBuilder.forAddress(ip, port).build()
                             )
+
+                            changeToRefresh = !changeToRefresh
                         }) {
                             Icon(R.drawable.done)
                         }

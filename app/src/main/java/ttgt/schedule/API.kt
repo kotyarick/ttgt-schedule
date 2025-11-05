@@ -18,28 +18,30 @@ fun createGrpcChannel(
 ): ManagedChannel {
     return OkHttpChannelBuilder.forAddress(ip, port)
         .apply {
-            if (ip == DEFAULT_IP && port == DEFAULT_PORT) {
-                // Load the certificate from raw resources
-                val certInputStream: InputStream = context.resources.openRawResource(R.raw.cert)
-                val certificateFactory = CertificateFactory.getInstance("X.509")
-                val certificate = certificateFactory.generateCertificate(certInputStream)
+            if (ip != DEFAULT_IP) return@apply
+            if (port != DEFAULT_PORT) return@apply
 
-                // Create a KeyStore and add the certificate
-                val keyStore = java.security.KeyStore.getInstance(java.security.KeyStore.getDefaultType())
-                keyStore.load(null, null)
-                keyStore.setCertificateEntry("ca", certificate)
 
-                // Create a TrustManager that trusts the certificate
-                val trustManagerFactory =
-                    TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
-                trustManagerFactory.init(keyStore)
+            // Load the certificate from raw resources
+            val certInputStream: InputStream = context.resources.openRawResource(R.raw.cert)
+            val certificateFactory = CertificateFactory.getInstance("X.509")
+            val certificate = certificateFactory.generateCertificate(certInputStream)
 
-                // Create an SSLContext and initialize it with the TrustManager
-                val sslContext = SSLContext.getInstance("TLS")
-                sslContext.init(null, trustManagerFactory.trustManagers, null)
+            // Create a KeyStore and add the certificate
+            val keyStore = java.security.KeyStore.getInstance(java.security.KeyStore.getDefaultType())
+            keyStore.load(null, null)
+            keyStore.setCertificateEntry("ca", certificate)
 
-                sslSocketFactory(sslContext.socketFactory)
-            }
+            // Create a TrustManager that trusts the certificate
+            val trustManagerFactory =
+                TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
+            trustManagerFactory.init(keyStore)
+
+            // Create an SSLContext and initialize it with the TrustManager
+            val sslContext = SSLContext.getInstance("TLS")
+            sslContext.init(null, trustManagerFactory.trustManagers, null)
+
+            sslSocketFactory(sslContext.socketFactory)
         }
         .build()
 }
