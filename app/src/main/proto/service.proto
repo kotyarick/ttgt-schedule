@@ -6,22 +6,6 @@ option java_multiple_files = true;
 import "schedule.proto";
 import "google/protobuf/empty.proto";
 
-message Group {
-  string name = 1;
-  string id = 2;
-}
-
-message GroupResponse {
-  repeated Group groups = 1;
-}
-
-message GroupId {
-  string id = 1;
-}
-
-message Teacher {
-  string name = 1;
-}
 
 message Overrides {
   repeated Override overrides = 1;
@@ -33,38 +17,4 @@ message Override {
   Lesson shouldBe = 1;
   Lesson willBe = 2;
   uint32 index = 3;
-}
-
-message LatestVersion {
-  int32 version_code = 1;
-  string changelog = 2;
-}
-
-message Application {
-  enum Platform {
-    Unknown = 0;
-    Android = 1;
-  }
-
-  Platform platform = 1;
-}
-
-message LatestVersionDownload {
-  string sha256 = 1;
-  bytes file = 2;
-}
-
-message Teachers {
-  repeated string teacher = 1;
-}
-
-service Server {
-  rpc GetGroups(google.protobuf.Empty) returns (GroupResponse);
-  rpc GetSchedule(GroupId) returns (Schedule);
-  rpc GetTeacherSchedule(Teacher) returns (Schedule);
-  rpc GetTeachers(google.protobuf.Empty) returns (Teachers);
-  rpc GetOverrides(GroupId) returns (Overrides);
-  rpc GetTeacherOverrides(Teacher) returns (Overrides);
-  rpc GetLatestVersion(Application) returns (LatestVersion);
-  rpc DownloadLatestVersion(Application) returns (LatestVersionDownload);
 }

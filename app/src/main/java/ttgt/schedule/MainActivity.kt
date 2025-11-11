@@ -21,16 +21,14 @@ import androidx.datastore.dataStore
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.google.protobuf.Empty
 import com.google.protobuf.InvalidProtocolBufferException
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import ttgt.schedule.api.profile
 import ttgt.schedule.proto.Lesson
 import ttgt.schedule.proto.LessonUserData
-import ttgt.schedule.proto.Overrides
-import ttgt.schedule.proto.ServerGrpc
 import ttgt.schedule.proto.UserData
 import ttgt.schedule.ui.Destination
 import ttgt.schedule.ui.ScheduleUi
@@ -38,8 +36,6 @@ import ttgt.schedule.ui.Welcome
 import ttgt.schedule.ui.widgets.ScheduleWidget
 import java.io.InputStream
 import java.io.OutputStream
-
-val empty: Empty = Empty.newBuilder().build()
 
 fun Lesson.isEmpty() = lessonCase in listOf(
     Lesson.LessonCase.LESSON_NOT_SET,
@@ -84,8 +80,6 @@ val Context.settingsDataStore: DataStore<UserData> by dataStore(
     serializer = SettingsSerializer
 )
 
-lateinit var stub: ServerGrpc.ServerBlockingStub
-
 @Composable
 fun Icon(@DrawableRes drawable: Int) =
     Icon(drawable.vector, null)
@@ -115,24 +109,22 @@ class MainActivity : ComponentActivity() {
             val navController = rememberNavController()
             val context = LocalContext.current
             val scope = rememberCoroutineScope()
-            stub = ServerGrpc.newBlockingStub(createGrpcChannel(context))
 
             NavHost(
                 navController = navController,
                 startDestination = runBlocking {
-                    if (settingsDataStore.data.map { it.hasSchedule() }.firstOrNull() == true)
-                        Destination.Schedule else Destination.Welcome
+                    val profiles = settingsDataStore.data.map { it.profiles }.firstOrNull()
+                    val lastUsed = settingsDataStore.data.map { it.lastUsed }.firstOrNull()
+
+                    if (
+                        profiles?.profile(lastUsed) == null
+                    ) Destination.Welcome
+                    else Destination.Schedule
                 }
             ) {
                 composable<Destination.Welcome> {
                     Welcome {
                         scope.launch {
-                            context.settingsDataStore.updateData {
-                                it.toBuilder()
-                                    .setOverrides(Overrides.newBuilder().build())
-                                    .build()
-                            }
-
                             context.updateWidgets()
                         }
 

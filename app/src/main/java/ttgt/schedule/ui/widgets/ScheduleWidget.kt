@@ -14,7 +14,9 @@ import ttgt.schedule.R
 import ttgt.schedule.getLessonData
 import ttgt.schedule.isEmpty
 import ttgt.schedule.name
+import ttgt.schedule.api.profile
 import ttgt.schedule.proto.Lesson
+import ttgt.schedule.proto.ProfileType
 import ttgt.schedule.proto.Schedule
 import ttgt.schedule.proto.WidgetSettings
 import ttgt.schedule.settingsDataStore
@@ -85,6 +87,8 @@ class ScheduleWidget : AppWidgetProvider() {
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray
     ) {
+        if (appWidgetIds.isEmpty())
+            return
         var isSecondWeek = weekNum()
         var weekday = weekday()
 
@@ -102,17 +106,19 @@ class ScheduleWidget : AppWidgetProvider() {
             }.firstOrNull()
         }
 
-        val isTeacher = runBlocking {
+        val lastUsed = runBlocking {
             context.settingsDataStore.data.map {
-                it.teacherName
-            }.firstOrNull()?.isNotBlank() == true
-        }
-
-        runBlocking {
-            schedule = context.settingsDataStore.data.map {
-                it.schedule
+                it.lastUsed
             }.firstOrNull()
         }
+
+        val profiles = runBlocking {
+            context.settingsDataStore.data.map {
+                it.profiles
+            }.firstOrNull()
+        }
+
+        schedule = profiles?.profile(lastUsed)?.schedule
 
         views.setTextViewText(
             R.id.today,
@@ -127,6 +133,8 @@ class ScheduleWidget : AppWidgetProvider() {
         views.removeAllViews(R.id.lesson_list)
 
         schedule?.let { schedule ->
+            println(schedule.weeksCount)
+
             schedule
                 .weeksList[if (isSecondWeek) 1 else 0]
                 .daysList[weekday]
@@ -139,7 +147,7 @@ class ScheduleWidget : AppWidgetProvider() {
                         lesson,
                         index,
                         TimestampType.fromWeekday(weekday),
-                        isTeacher,
+                        lastUsed == ProfileType.TEACHER,
                         context
                     )
                 }

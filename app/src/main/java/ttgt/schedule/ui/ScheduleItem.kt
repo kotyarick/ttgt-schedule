@@ -1,6 +1,5 @@
 package ttgt.schedule.ui
 
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,7 +33,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
-import ttgt.schedule.Icon
 import ttgt.schedule.R
 import ttgt.schedule.getLessonData
 import ttgt.schedule.isEmpty
@@ -66,7 +64,7 @@ data class LessonTime(
     }
 
     override fun toString() = "$start - $end"
-    fun toLinedString() = "$start\n$end"
+    //fun toLinedString() = "$start\n$end"
 }
 
 @Composable
@@ -128,12 +126,14 @@ fun ScheduleItem(
             subgroup = context.getLessonData(lesson)?.subgroup ?: 0
         }
 
-        while (true) {
-            isCurrent = isToday && timestampType.timestamps.getOrNull(
-                if (timestampType == TimestampType.ClassHour && index > 2) index + 1 else index
-            )?.isNow() == true
+        if (isToday) {
+            while (true) {
+                isCurrent = timestampType.timestamps.getOrNull(
+                    if (timestampType == TimestampType.ClassHour && index > 2) index + 1 else index
+                )?.isNow() == true
 
-            delay(1000)
+                delay(1000)
+            }
         }
     }
 
@@ -231,11 +231,7 @@ fun ScheduleItem(
                 Column(Modifier.fillMaxHeight(), horizontalAlignment = Alignment.End) {
                     timestampType.timestamps.getOrNull(timestampIndex)?.let { time ->
                         Text(
-                            if (twoLined == true) {
-                                time.toLinedString()
-                            } else {
-                                time.toString()
-                            },
+                            time.toString(),
                             color = MaterialTheme.colorScheme.secondary,
                             textAlign = TextAlign.End,
                             onTextLayout = { result ->

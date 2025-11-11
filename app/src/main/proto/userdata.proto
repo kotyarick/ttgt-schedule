@@ -17,15 +17,29 @@ message WidgetSettings {
   uint32 innerPadding = 2;
 }
 
+message Profile {
+	Schedule schedule = 1;
+	Overrides overrides = 2;
+	string name = 3;
+}
+
+message Profiles {
+	optional Profile teacher = 1;
+	optional Profile student = 2;
+}
+
+enum ProfileType {
+	UNKNOWN = 0;
+	TEACHER = 1;
+	STUDENT = 2;
+}
+
 message UserData {
-  Schedule schedule = 1;
-  Overrides overrides = 3;
+  reserved 1, 2, 3, 5;
+  
   map<string, LessonUserData> lessonData = 4;
-
-  oneof identity {
-    string groupName = 2;
-    string teacherName = 5;
-  }
-
   map<int32, WidgetSettings> widgets = 6;
+  
+  Profiles profiles = 7;
+  ProfileType lastUsed = 8;
 }

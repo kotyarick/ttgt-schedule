@@ -1,8 +1,8 @@
 package ttgt.schedule.ui
 
-import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -53,6 +53,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -77,21 +78,21 @@ import kotlinx.coroutines.launch
 import ttgt.schedule.DayOfWeek
 import ttgt.schedule.Icon
 import ttgt.schedule.R
+import ttgt.schedule.api.Client
+import ttgt.schedule.api.Update
 import ttgt.schedule.datastoreKey
 import ttgt.schedule.dayOfWeek
+import ttgt.schedule.api.editProfile
 import ttgt.schedule.getLessonData
 import ttgt.schedule.isEmpty
-import ttgt.schedule.proto.Application
-import ttgt.schedule.proto.GroupId
-import ttgt.schedule.proto.LatestVersion
+import ttgt.schedule.api.profile
 import ttgt.schedule.proto.Lesson
 import ttgt.schedule.proto.LessonUserData
-import ttgt.schedule.proto.LessonUserDataOrBuilder
 import ttgt.schedule.proto.Overrides
+import ttgt.schedule.proto.ProfileType
+import ttgt.schedule.proto.Profiles
 import ttgt.schedule.proto.Schedule
-import ttgt.schedule.proto.Teacher
 import ttgt.schedule.settingsDataStore
-import ttgt.schedule.stub
 import ttgt.schedule.ui.theme.ScheduleTheme
 import ttgt.schedule.updateWidgets
 import ttgt.schedule.vector
@@ -116,7 +117,7 @@ fun weekNum(inputDate: Calendar): Boolean {
 
     val currentDate = Calendar.getInstance().apply { time = startOfYear.time }
 
-    while (currentDate.before(inputDate) || currentDate.equals(inputDate)) {
+    while (currentDate.before(inputDate)) {
         if (currentDate.dayOfWeek == DayOfWeek.SUNDAY.ordinal) {
             out = !out
         }
@@ -188,7 +189,7 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
     )
     var showDatePicker by remember { mutableStateOf(false) }
 
-    var versionInfo: LatestVersion? by remember { mutableStateOf(null) }
+    var versionInfo: Update? by remember { mutableStateOf(null) }
     var versionLoadingState by remember { mutableStateOf(LoadingState.PreLoading) }
 
     val packageInfo = remember {
@@ -207,18 +208,16 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
 
     val snackbarHostState = remember { SnackbarHostState() }
 
-    var isTeacher by remember { mutableStateOf(false) }
+    var lastUsed: ProfileType? by remember { mutableStateOf(null) }
 
-    LaunchedEffect(Unit) {
-        var a = false
-        scope.launch {
-            a = context.settingsDataStore.data.map {
-                it.hasTeacherName()
-            }.firstOrNull() ?: false
-        }.invokeOnCompletion {
-            isTeacher = a
-        }
-    }
+    var updateItems by remember { mutableStateOf(false) }
+
+//    LaunchedEffect(Unit) {
+//        while (true) {
+//            delay(1000)
+//            updateItems = !updateItems
+//        }
+//    }
 
     var currentLesson: Lesson? by remember { mutableStateOf(null) }
     val lessonInfo = rememberModalBottomSheetState()
@@ -238,6 +237,15 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                 ?.isNotEmpty() == true
             ) 180F else 0F
     )
+
+    val profileSwitcherRotationAnimated =  animateFloatAsState(
+        if (
+            lastUsed == ProfileType.TEACHER
+        ) 180F else 0F,
+        tween(durationMillis = 300)
+    )
+
+    var profiles: Profiles? by remember { mutableStateOf(null) }
 
     fun snackbar(text: String) = scope.launch {
         val result = snackbarHostState
@@ -260,11 +268,7 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
 
     fun checkUpdate() = scope.launch(Dispatchers.IO) {
         runCatching {
-            stub.getLatestVersion(
-                Application.newBuilder()
-                    .setPlatform(Application.Platform.Android)
-                    .build()
-            )
+            Client.updates()
         }.apply {
             exceptionOrNull()?.printStackTrace()
             runOnUiThread {
@@ -345,7 +349,7 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                     } else {
                         Button({
                             scope.launch {
-                                uriHandler.openUri("http://185.13.47.146:50145/android.apk")
+                                uriHandler.openUri(Client.downloadUpdateUrl)
                             }
                         }, Modifier.fillMaxWidth()) {
                             Text(
@@ -392,22 +396,10 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
 
         scope.launch(Dispatchers.IO) {
             runCatching {
-                val groupName = context.settingsDataStore.data.map { it.groupName }.firstOrNull()
-                val teacherName = context.settingsDataStore.data.map { it.teacherName }.firstOrNull()
+                val lastUsed = lastUsed ?: return@runCatching null
+                val profile = profiles?.profile(lastUsed) ?: return@runCatching null
 
-                if (groupName?.isNotBlank() == true) {
-                    stub.getOverrides(
-                        GroupId.newBuilder()
-                            .setId(groupName)
-                            .build()
-                    )
-                } else {
-                    stub.getTeacherOverrides(
-                        Teacher.newBuilder()
-                            .setName(teacherName)
-                            .build()
-                    )
-                }
+                Client.overrides(profile.name)
             }.apply {
                 exceptionOrNull()?.printStackTrace()
 
@@ -418,9 +410,35 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                 }
                 if (isSuccess) {
                     context.settingsDataStore.updateData {
-                        it.toBuilder().setOverrides(overrides ?: Overrides.newBuilder().build()).build()
+                        it.toBuilder().editProfile(lastUsed!!) {
+                            setOverrides(
+                                overrides ?: Overrides.newBuilder().build()
+                            )
+                        }.build()
                     }
                 }
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        var lastUsedTmp: ProfileType? = null
+        var profilesTmp: Profiles? = null
+
+        scope.launch {
+            lastUsedTmp = context.settingsDataStore.data.map { it.lastUsed }.firstOrNull()
+            profilesTmp = context.settingsDataStore.data.map { it.profiles }.firstOrNull()
+        }.invokeOnCompletion {
+            lastUsed = lastUsedTmp
+            profiles = profilesTmp
+
+            val profile = profiles!!.profile(lastUsed)!!
+
+            schedule = profile.schedule
+            overrides = profile.overrides
+
+            if (overrides?.takeIf { it.overridesCount > 0 } == null) {
+                checkOverrides { }
             }
         }
     }
@@ -447,17 +465,6 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                         else weekday
                     }
                 )
-            }
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        schedule = context.settingsDataStore.data.map { it.schedule }.firstOrNull()
-        overrides = context.settingsDataStore.data.map { it.overrides }.firstOrNull()
-
-        if (overrides?.takeIf { it.overridesCount > 0 } == null) {
-            checkOverrides {
-
             }
         }
     }
@@ -566,7 +573,7 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                         Modifier.padding(bottom = 16.dp),
                         style = MaterialTheme.typography.headlineSmall
                     )
-                    if (isTeacher) {
+                    if (lastUsed == ProfileType.TEACHER) {
                         Text(
                             lesson.group,
                             style = MaterialTheme.typography.titleMedium,
@@ -601,6 +608,7 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                                             context.updateWidgets()
                                         }.invokeOnCompletion {
                                             subgroup = index
+                                            updateItems = !updateItems
                                         }
                                     }, colors = if (index == subgroup) ButtonColors(
                                         containerColor = MaterialTheme.colorScheme.primary,
@@ -663,6 +671,49 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                     }
                 }
 
+                profiles?.let { profiles ->
+                    if (profiles.hasStudent() && profiles.hasTeacher()) {
+                        IconButton({
+                            lastUsed = when (lastUsed) {
+                                ProfileType.TEACHER -> ProfileType.STUDENT
+                                ProfileType.STUDENT -> ProfileType.TEACHER
+                                else -> ProfileType.STUDENT
+                            }
+
+                            val profile = profiles.profile(lastUsed)!!
+                            schedule = profile.schedule
+                            overrides = profile.overrides
+
+                            scope.launch {
+                                context.settingsDataStore.updateData {
+                                    it.toBuilder().setLastUsed(lastUsed).build()
+                                }
+                            }
+
+                            scope.launch {
+                                snackbarHostState.currentSnackbarData?.dismiss()
+
+                                snackbarHostState
+                                    .showSnackbar(
+                                        message = when (lastUsed) {
+                                            ProfileType.TEACHER -> "Преподаватель: "
+                                            ProfileType.STUDENT -> "Группа: "
+                                            else -> ""
+                                        } + profile.name,
+                                        duration = SnackbarDuration.Short
+                                    )
+                            }
+                        }) {
+                            Icon(
+                                R.drawable.switch_profile.vector,
+                                null,
+                                Modifier
+                                    .rotate(profileSwitcherRotationAnimated.value)
+                            )
+                        }
+                    }
+                }
+
                 var showMenu by remember { mutableStateOf(false) }
                 IconButton({ showMenu = true }) {
                     Icon(R.drawable.more)
@@ -702,6 +753,10 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                         DropdownMenuItem({
                             Text(stringResource(R.string.change_group))
                         }, { goToWelcome() })
+
+                        DropdownMenuItem({
+                            Text(stringResource(R.string.feedback))
+                        }, { uriHandler.openUri("https://t.me/ttgt1bot") })
 
                         DropdownMenuItem({ Text(stringResource(R.string.about)) }, {
                             scope.launch {
@@ -810,129 +865,131 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                 return@HorizontalPager
             }
 
-            schedule?.let { schedule ->
-                LazyColumn(
-                    Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    val overs = overrides  // Allow smart cast
+            key(isSelectedWeekEven, updateItems) {
+                schedule?.let { schedule ->
+                    LazyColumn(
+                        Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        val overs = overrides  // Allow smart cast
 
-                    val sched: Schedule = if (applyOverrides && overs != null) {
-                        schedule.let {
-                            it
-                                .toBuilder()
-                                .setWeeks(
-                                    overs.weekNum,
-                                    it.weeksList[overs.weekNum]
-                                        .toBuilder()
-                                        .setDays(
-                                            overs.weekDay,
-                                            it.weeksList[overs.weekNum].daysList[overs.weekDay]
-                                                .toBuilder()
-                                                .let { day ->
-                                                    overs.overridesList.forEach { over ->
-                                                        //TODO: subgrouped lesson shit
+                        val sched: Schedule = if (applyOverrides && overs != null) {
+                            schedule.let {
+                                it
+                                    .toBuilder()
+                                    .setWeeks(
+                                        overs.weekNum,
+                                        it.weeksList[overs.weekNum]
+                                            .toBuilder()
+                                            .setDays(
+                                                overs.weekDay,
+                                                it.weeksList[overs.weekNum].daysList[overs.weekDay]
+                                                    .toBuilder()
+                                                    .let { day ->
+                                                        overs.overridesList.forEach { over ->
+                                                            //TODO: subgrouped lesson shit
 
-                                                        /*if (
-                                                            day
-                                                                .lessonList
-                                                                .getOrNull(over.index)
-                                                                ?.hasSubgroupedLesson() == true
-                                                            && over.willBe.hasSubgroupedLesson()
-                                                        ) {
-                                                            day.setLesson(
-                                                                over.index,
-                                                                Lesson.newBuilder()
-                                                                    .setSubgroupedLesson(
-                                                                        SubgroupedLesson.newBuilder()
-                                                                            .let { sublesson ->
-                                                                                over.willBe.subgroupedLesson
+                                                            /*if (
+                                                                day
+                                                                    .lessonList
+                                                                    .getOrNull(over.index)
+                                                                    ?.hasSubgroupedLesson() == true
+                                                                && over.willBe.hasSubgroupedLesson()
+                                                            ) {
+                                                                day.setLesson(
+                                                                    over.index,
+                                                                    Lesson.newBuilder()
+                                                                        .setSubgroupedLesson(
+                                                                            SubgroupedLesson.newBuilder()
+                                                                                .let { sublesson ->
+                                                                                    over.willBe.subgroupedLesson
 
-                                                                                sublesson
-                                                                            }
-                                                                            .build()
-                                                                    )
-                                                                    .build()
-                                                            )
-                                                        } else {
+                                                                                    sublesson
+                                                                                }
+                                                                                .build()
+                                                                        )
+                                                                        .build()
+                                                                )
+                                                            } else {
 
-                                                        }*/
+                                                            }*/
 
-                                                        day.setLesson(over.index, over.willBe)
+                                                            day.setLesson(over.index, over.willBe)
+                                                        }
+                                                        day
                                                     }
-                                                    day
-                                                }
-                                                .build()
-                                        )
-                                        .build()
-                                )
-                                .build()
+                                                    .build()
+                                            )
+                                            .build()
+                                    )
+                                    .build()
+                            }
+                        } else {
+                            schedule
                         }
-                    } else {
-                        schedule
-                    }
 
-                    val list = sched
-                        .weeksList[if (isSelectedWeekEven) 1 else 0]
-                        .daysList[page]
-                        .lessonList
+                        val list = sched
+                            .weeksList[if (isSelectedWeekEven) 1 else 0]
+                            .daysList[page]
+                            .lessonList
 
-                    // Отступ сверху
-                    item { Box {} }
+                        // Отступ сверху
+                        item { Box {} }
 
-                    val timestampType = TimestampType.fromWeekday(page)
+                        val timestampType = TimestampType.fromWeekday(page)
 
-                    items(list.size + if (timestampType == TimestampType.ClassHour) 1 else 0) { i ->
-                        val index =
-                            i - if (timestampType == TimestampType.ClassHour && i > 3) 1 else 0
+                        items(list.size + if (timestampType == TimestampType.ClassHour) 1 else 0) { i ->
+                            val index =
+                                i - if (timestampType == TimestampType.ClassHour && i > 3) 1 else 0
 
-                        when {
-                            timestampType == TimestampType.ClassHour && i == 3 -> ClassHour(
-                                isToday && timestampType.timestamps.getOrNull(3)
-                                    ?.isNow() == true
-                            )
+                            when {
+                                timestampType == TimestampType.ClassHour && i == 3 -> ClassHour(
+                                    isToday && timestampType.timestamps.getOrNull(3)
+                                        ?.isNow() == true
+                                )
 
-                            index < 5 || !list[index].isEmpty() -> ScheduleItem(
-                                list[index],
-                                index,
-                                isToday,
-                                timestampType,
-                                isTeacher
-                            ) {
-                                scope.launch {
-                                    currentLesson = list[index]
-                                    if (currentLesson != null) {
-                                        lessonInfo.show()
+                                index < 5 || !list[index].isEmpty() -> ScheduleItem(
+                                    list[index],
+                                    index,
+                                    isToday,
+                                    timestampType,
+                                    lastUsed == ProfileType.TEACHER
+                                ) {
+                                    scope.launch {
+                                        currentLesson = list[index]
+                                        if (currentLesson != null) {
+                                            lessonInfo.show()
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
 
-                    if (
-                        overs != null &&
-                        overs.overridesCount > 0 &&
-                        (overs.weekNum == 1) == isSelectedWeekEven &&
-                        overs.weekDay == page
-                    ) {
-                        item {
-                            ListItem(
-                                {
-                                    Text(stringResource(R.string.apply_overrides))
-                                },
-                                Modifier
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .clickable {
-                                        applyOverrides = !applyOverrides
+                        if (
+                            overs != null &&
+                            overs.overridesCount > 0 &&
+                            (overs.weekNum == 1) == isSelectedWeekEven &&
+                            overs.weekDay == page
+                        ) {
+                            item {
+                                ListItem(
+                                    {
+                                        Text(stringResource(R.string.apply_overrides))
                                     },
-                                leadingContent = {
-                                    Checkbox(
-                                        applyOverrides,
-                                        { applyOverrides = !applyOverrides }
-                                    )
-                                })
+                                    Modifier
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .clickable {
+                                            applyOverrides = !applyOverrides
+                                        },
+                                    leadingContent = {
+                                        Checkbox(
+                                            applyOverrides,
+                                            { applyOverrides = !applyOverrides }
+                                        )
+                                    })
+                            }
                         }
                     }
                 }

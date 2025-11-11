@@ -33,6 +33,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -55,15 +56,15 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import ttgt.schedule.Icon
 import ttgt.schedule.R
-import ttgt.schedule.empty
-import ttgt.schedule.proto.Group
-import ttgt.schedule.proto.GroupId
-import ttgt.schedule.proto.Teacher
+import ttgt.schedule.api.Client
+import ttgt.schedule.api.editProfile
+import ttgt.schedule.proto.ProfileType
 import ttgt.schedule.settingsDataStore
-import ttgt.schedule.stub
 import ttgt.schedule.ui.theme.ScheduleTheme
 import ttgt.schedule.vector
 
@@ -72,41 +73,32 @@ private val uiScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
 fun runOnUiThread(block: suspend () -> Unit) = uiScope.launch { block() }
 
-enum class UserType {
-    Student, Teacher
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    val groups = remember { mutableStateListOf<Group>() }
+    val groups = remember { mutableStateListOf<String>() }
     val teachers = remember { mutableStateListOf<String>() }
     var isError by remember { mutableStateOf(false) }
     var selectedGroup by remember { mutableStateOf("") }
     var changeToRefresh by remember { mutableStateOf(false) }
     var continueLoading by remember { mutableStateOf(false) }
-    var loginAs by remember { mutableStateOf(UserType.Student) }
+    var loginAs by remember { mutableStateOf(ProfileType.STUDENT) }
     var teacherQuery by remember { mutableStateOf("") }
     var selectedTeacher by remember { mutableStateOf("") }
 
     LaunchedEffect(changeToRefresh) {
         scope.launch(Dispatchers.IO) {
             try {
-                val g = stub.getGroups(empty).groupsList
-                groups.clear()
-                groups.addAll(g)
-            } catch (error: Throwable) {
-                error.printStackTrace()
-                isError = true
-            }
-        }
+                val items = Client.items()
 
-        scope.launch(Dispatchers.IO) {
-            try {
-                teachers.addAll(stub.getTeachers(empty).teacherList)
+                groups.clear()
+                groups.addAll(items.groups)
+
+                teachers.clear()
+                teachers.addAll(items.teachers)
             } catch (error: Throwable) {
                 error.printStackTrace()
                 isError = true
@@ -122,8 +114,9 @@ fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
                 Text(
                     stringResource(
                         when (loginAs) {
-                            UserType.Student -> R.string.group_selection
-                            UserType.Teacher -> R.string.teacher_selection
+                            ProfileType.STUDENT -> R.string.group_selection
+                            ProfileType.TEACHER -> R.string.teacher_selection
+                            else -> 0
                         }
                     )
                 )
@@ -131,82 +124,51 @@ fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
         },
         floatingActionButton = {
             if (
-                (selectedGroup.isNotBlank() && loginAs == UserType.Student)
-                || (selectedTeacher.isNotBlank() && loginAs == UserType.Teacher)
+                (selectedGroup.isNotBlank() && loginAs == ProfileType.STUDENT)
+                || (selectedTeacher.isNotBlank() && loginAs == ProfileType.TEACHER)
             ) {
                 ExtendedFloatingActionButton({
                     if (continueLoading) return@ExtendedFloatingActionButton
 
                     continueLoading = true
                     var erroring = false
-                    when (loginAs) {
-                        UserType.Student -> {
-                            val groupId = GroupId.newBuilder().setId(selectedGroup).build()
-                            scope.launch(Dispatchers.IO) {
-                                runCatching {
-                                    stub.getSchedule(groupId)
-                                }.apply {
-                                    erroring = isFailure
 
-                                    exceptionOrNull()?.printStackTrace()
+                    val itemName = if (loginAs == ProfileType.TEACHER) selectedTeacher else selectedGroup
 
-                                    getOrNull()?.let { result ->
-                                        val overrides = runCatching {
-                                            stub.getOverrides(groupId)
-                                        }.let {
-                                            it.exceptionOrNull()?.printStackTrace()
+                    scope.launch(Dispatchers.IO) {
+                        runCatching {
+                            Client.schedule(itemName)
+                        }.apply {
+                            erroring = isFailure
 
-                                            it.getOrNull()
-                                        }
+                            exceptionOrNull()?.printStackTrace()
 
-                                        context.settingsDataStore.updateData {
-                                            it.toBuilder()
-                                                .setSchedule(result)
-                                                .setGroupName(groups.first { group -> group.id == selectedGroup }.name)
-                                                .let { builder ->
-                                                    if (overrides != null)
-                                                        builder.setOverrides(overrides)
-                                                    else builder
-                                                }
-                                                .build()
-                                        }
-                                    }
+                            val schedule = getOrNull()
+
+                            if (!isFailure) {
+                                val overrides = runCatching {
+                                    Client.overrides(itemName)
+                                }.let {
+                                    it.exceptionOrNull()?.printStackTrace()
+
+                                    it.getOrNull()
                                 }
-                            }.invokeOnCompletion {
-                                continueLoading = false
 
-                                runOnUiThread {
-                                    if (!erroring) goToSchedule()
+                                context.settingsDataStore.updateData {
+                                    it.toBuilder().editProfile(loginAs) {
+                                        setSchedule(schedule)
+                                            .setOverrides(overrides)
+                                            .setName(selectedGroup)
+                                    }
+                                        .setLastUsed(loginAs).build()
                                 }
                             }
                         }
+                    }.invokeOnCompletion {
+                        continueLoading = false
 
-                        UserType.Teacher -> {
-                            val teacher = Teacher.newBuilder().setName(selectedTeacher).build()
-                            scope.launch(Dispatchers.IO) {
-                                runCatching {
-                                    stub.getTeacherSchedule(teacher)
-                                }.apply {
-                                    erroring = isFailure
-
-                                    exceptionOrNull()?.printStackTrace()
-
-                                    getOrNull()?.let { result ->
-                                        context.settingsDataStore.updateData {
-                                            it.toBuilder()
-                                                .setSchedule(result)
-                                                .setTeacherName(selectedTeacher)
-                                                .build()
-                                        }
-                                    }
-                                }
-                            }.invokeOnCompletion {
-                                continueLoading = false
-
-                                runOnUiThread {
-                                    if (!erroring) goToSchedule()
-                                }
-                            }
+                        runOnUiThread {
+                            if (!erroring) goToSchedule()
                         }
                     }
                 }) {
@@ -234,8 +196,9 @@ fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
                     Text(
                         stringResource(
                             when (loginAs) {
-                                UserType.Student -> R.string.login_as_teacher
-                                UserType.Teacher -> R.string.login_as_student
+                                ProfileType.STUDENT -> R.string.login_as_teacher
+                                ProfileType.TEACHER -> R.string.login_as_student
+                                else -> 0
                             }
                         )
                     )
@@ -245,19 +208,20 @@ fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
                     .clip(CardDefaults.shape)
                     .clickable {
                         loginAs =
-                            if (loginAs == UserType.Teacher) UserType.Student else UserType.Teacher
+                            if (loginAs == ProfileType.TEACHER) ProfileType.STUDENT
+                            else ProfileType.TEACHER
                     }
             )
             Card(
                 Modifier.fillMaxWidth()
             ) {
                 when (loginAs) {
-                    UserType.Student -> Row(
+                    ProfileType.STUDENT -> Row(
                         Modifier
-                            .padding(10.dp)
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
                             .fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceAround
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
                             stringResource(R.string.course_selection),
@@ -268,6 +232,7 @@ fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
                                 {
                                     course = if (course == it) 0 else it
                                 },
+                                Modifier.weight(1F),
                                 colors = if (course == it) ButtonColors(
                                     containerColor = MaterialTheme.colorScheme.primary,
                                     contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -285,15 +250,23 @@ fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
                         }
                     }
 
-                    UserType.Teacher -> {
+                    ProfileType.TEACHER -> {
                         TextField(
                             teacherQuery, { teacherQuery = it },
                             Modifier.fillMaxWidth(),
                             label = { Text(stringResource(R.string.search)) },
                             maxLines = 1,
-                            leadingIcon = { Icon(R.drawable.search) }
+                            leadingIcon = { Icon(R.drawable.search) },
+                            colors = TextFieldDefaults.colors(
+                                disabledIndicatorColor = Color.Transparent,
+                                errorIndicatorColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent
+                            )
                         )
                     }
+
+                    else -> {}
                 }
             }
 
@@ -303,7 +276,7 @@ fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
                     .fillMaxWidth()
             ) {
                 when {
-                    loginAs == UserType.Teacher && teachers.isNotEmpty() -> {
+                    loginAs == ProfileType.TEACHER && teachers.isNotEmpty() -> {
                         LazyColumn {
                             val filteredTeachers = teachers.filter { teacher ->
                                 if (!teacher.contains(".")) return@filter false
@@ -350,7 +323,7 @@ fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
                         }
                     }
 
-                    loginAs == UserType.Student && groups.isNotEmpty() -> {
+                    loginAs == ProfileType.STUDENT && groups.isNotEmpty() -> {
                         Box(
                             Modifier
                                 .padding(10.dp)
@@ -360,37 +333,37 @@ fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
                                 horizontalArrangement = Arrangement.spacedBy(5.dp),
                                 verticalArrangement = Arrangement.spacedBy(5.dp)
                             ) {
-                                groups.sortedBy { it.name }.forEach { group ->
-                                    if (course != 0 && !group.name.contains("-$course-")) return@forEach
+                                groups.sorted().forEach { group ->
+                                    if (course != 0 && !group.contains("-$course-")) return@forEach
 
                                     Card(
-                                        { selectedGroup = group.id },
+                                        { selectedGroup = group },
                                         Modifier
                                             .border(
                                                 width = 1.dp,
-                                                color = if (selectedGroup == group.id) MaterialTheme.colorScheme.inversePrimary else Color.Black,
+                                                color = if (selectedGroup == group) MaterialTheme.colorScheme.inversePrimary else Color.Black,
                                                 shape = RoundedCornerShape(5.dp)
                                             )
                                             .weight(1F),
                                         shape = RoundedCornerShape(5.dp),
                                         colors = CardDefaults.cardColors(
-                                            containerColor = if (selectedGroup == group.id)
+                                            containerColor = if (selectedGroup == group)
                                                 MaterialTheme.colorScheme.primary else Color.Transparent
                                         )
                                     ) {
                                         Box(
                                             Modifier
                                                 .padding(
-                                                    horizontal = if (selectedGroup == group.id) 10.dp else 13.dp,
+                                                    horizontal = if (selectedGroup == group) 10.dp else 13.dp,
                                                     vertical = 13.dp
                                                 )
                                                 .fillMaxWidth(),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Text(
-                                                group.name,
+                                                group,
                                                 textAlign = TextAlign.Center,
-                                                fontWeight = if (selectedGroup == group.id) FontWeight.Bold
+                                                fontWeight = if (selectedGroup == group) FontWeight.Bold
                                                 else FontWeight.Normal
                                             )
                                         }
@@ -422,7 +395,8 @@ fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
 
                             Text(
                                 stringResource(R.string.request_error_body),
-                                style = MaterialTheme.typography.bodyLarge
+                                style = MaterialTheme.typography.bodyLarge,
+                                textAlign = TextAlign.Center
                             )
 
                             Spacer(Modifier.height(10.dp))

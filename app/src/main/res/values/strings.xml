@@ -47,4 +47,5 @@
     <string name="lesson_name">Название пары</string>
     <string name="time">Время</string>
     <string name="subgroup">Подгруппа:</string>
+    <string name="feedback">Обратная связь</string>
 </resources>

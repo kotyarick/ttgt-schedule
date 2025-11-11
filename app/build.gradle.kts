@@ -14,8 +14,8 @@ android {
         applicationId = "ttgt.schedule"
         minSdk = 24
         targetSdk = 36
-        versionCode = 4
-        versionName = "4"
+        versionCode = 5
+        versionName = "5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -28,7 +28,7 @@ android {
         }
 
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -55,16 +55,11 @@ protobuf {
         create("java") {
             artifact = "com.google.protobuf:protobuf-java:4.32.0"
         }
-
-        create("grpc-java") {
-            artifact = "io.grpc:protoc-gen-grpc-java:1.75.0"
-        }
     }
     generateProtoTasks {
         all().forEach { task ->
             task.builtins {
                 create("java")
-                create("grpc-java")
             }
         }
     }
@@ -76,13 +71,10 @@ dependencies {
     implementation(libs.androidx.datastore)
     implementation(libs.protoc)
 
-    implementation(libs.grpc.okhttp)
-    implementation(libs.okhttp)
-    implementation(libs.grpc.protobuf)
-    implementation(libs.grpc.stub)
     implementation(libs.protobuf.java)
-    implementation(libs.protoc.gen.grpc.java)
-
+    implementation(libs.ktor.client.core)
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.ktor.client.cio)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
