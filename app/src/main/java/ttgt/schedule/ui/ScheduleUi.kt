@@ -1,6 +1,7 @@
 package ttgt.schedule.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
@@ -35,6 +36,7 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -71,6 +73,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
@@ -162,7 +167,7 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
 
-    val weekday = remember { weekday() }
+    var weekday = remember { weekday() }
     val pagerState = rememberPagerState(
         weekday.let { weekday ->
             if (weekday >= TAB_AMOUNT) 0
@@ -208,7 +213,7 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
 
     val snackbarHostState = remember { SnackbarHostState() }
 
-    var lastUsed: ProfileType? by remember { mutableStateOf(null) }
+    var lastUsed by remember { mutableStateOf(ProfileType.TEACHER) }
 
     var updateItems by remember { mutableStateOf(false) }
 
@@ -238,16 +243,15 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
             ) 180F else 0F
     )
 
-    val profileSwitcherRotationAnimated =  animateFloatAsState(
-        if (
-            lastUsed == ProfileType.TEACHER
-        ) 180F else 0F,
-        tween(durationMillis = 300)
-    )
+    val profileSwitcherRotationAnimated = remember {
+        Animatable(0F)
+    }
 
     var profiles: Profiles? by remember { mutableStateOf(null) }
 
     fun snackbar(text: String) = scope.launch {
+        snackbarHostState.currentSnackbarData?.dismiss()
+
         val result = snackbarHostState
             .showSnackbar(
                 message = text,
@@ -260,13 +264,11 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                 uriHandler.openUri("https://ttgt.org/images/pdf/zamena.pdf")
             }
 
-            SnackbarResult.Dismissed -> {
-                /* Handle snackbar dismissed */
-            }
+            SnackbarResult.Dismissed -> {}
         }
     }
 
-    fun checkUpdate() = scope.launch(Dispatchers.IO) {
+    fun checkUpdate() = scope.launch {
         runCatching {
             Client.updates()
         }.apply {
@@ -345,6 +347,7 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                             leadingContent = {
                                 Icon(R.drawable.done)
                             },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
                     } else {
                         Button({
@@ -381,7 +384,8 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                         },
                         modifier = Modifier.clickable {
                             versionLoadingState = LoadingState.PreLoading
-                        }
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                     )
 
                     else -> {}
@@ -396,7 +400,6 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
 
         scope.launch(Dispatchers.IO) {
             runCatching {
-                val lastUsed = lastUsed ?: return@runCatching null
                 val profile = profiles?.profile(lastUsed) ?: return@runCatching null
 
                 Client.overrides(profile.name)
@@ -410,7 +413,7 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                 }
                 if (isSuccess) {
                     context.settingsDataStore.updateData {
-                        it.toBuilder().editProfile(lastUsed!!) {
+                        it.toBuilder().editProfile(lastUsed) {
                             setOverrides(
                                 overrides ?: Overrides.newBuilder().build()
                             )
@@ -429,7 +432,7 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
             lastUsedTmp = context.settingsDataStore.data.map { it.lastUsed }.firstOrNull()
             profilesTmp = context.settingsDataStore.data.map { it.profiles }.firstOrNull()
         }.invokeOnCompletion {
-            lastUsed = lastUsedTmp
+            lastUsed = lastUsedTmp ?: ProfileType.STUDENT
             profiles = profilesTmp
 
             val profile = profiles!!.profile(lastUsed)!!
@@ -467,6 +470,14 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                 )
             }
         }
+    }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        scope.launch {
+            checkOverrides { }
+        }
+        isCurrentWeekEven = weekNum()
+        weekday = weekday()
     }
 
     if (showDatePicker) {
@@ -674,6 +685,16 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                 profiles?.let { profiles ->
                     if (profiles.hasStudent() && profiles.hasTeacher()) {
                         IconButton({
+                            if (!profileSwitcherRotationAnimated.isRunning) {
+                                scope.launch {
+                                    profileSwitcherRotationAnimated.animateTo(
+                                        180F,
+                                        tween(1000)
+                                    )
+                                    profileSwitcherRotationAnimated.snapTo(0F)
+                                }
+                            }
+
                             lastUsed = when (lastUsed) {
                                 ProfileType.TEACHER -> ProfileType.STUDENT
                                 ProfileType.STUDENT -> ProfileType.TEACHER
@@ -700,7 +721,8 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                                             ProfileType.STUDENT -> "Группа: "
                                             else -> ""
                                         } + profile.name,
-                                        duration = SnackbarDuration.Short
+                                        duration = SnackbarDuration.Short,
+                                        withDismissAction = true
                                     )
                             }
                         }) {
@@ -721,22 +743,11 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                     DropdownMenu(showMenu, { showMenu = false }) {
                         DropdownMenuItem({
                             if (overridesChecking) {
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(stringResource(R.string.checking_overrides))
-
-                                    CircularProgressIndicator(
-                                        Modifier.size(20.dp),
-                                        color = MaterialTheme.colorScheme.secondary
-                                    )
-                                }
+                                Text(stringResource(R.string.checking_overrides))
                             } else {
                                 Text(stringResource(R.string.check_overrides))
                             }
                         }, {
-
                             checkOverrides { isFailure ->
                                 showMenu = false
 
@@ -748,22 +759,50 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                                     }
                                 )
                             }
-                        }, enabled = !overridesChecking)
+                        },
+                            leadingIcon = {
+                                if (overridesChecking) {
+                                    CircularProgressIndicator(
+                                        Modifier.size(20.dp),
+                                        color = MaterialTheme.colorScheme.secondary
+                                    )
+                                } else {
+                                    Icon(R.drawable.overrides)
+                                }
+                            },
+                            enabled = !overridesChecking
+                        )
 
-                        DropdownMenuItem({
-                            Text(stringResource(R.string.change_group))
-                        }, { goToWelcome() })
+                        DropdownMenuItem(
+                            {
+                                Text(stringResource(R.string.change_group))
+                            },
+                            {
+                                showMenu = false
+                                goToWelcome()
+                            },
+                            leadingIcon = {
+                                Icon(R.drawable.profile)
+                            }
+                        )
 
-                        DropdownMenuItem({
-                            Text(stringResource(R.string.feedback))
-                        }, { uriHandler.openUri("https://t.me/ttgt1bot") })
+                        DropdownMenuItem(
+                            {
+                                Text(stringResource(R.string.feedback))
+                            },
+                            {
+                                showMenu = false
+                                uriHandler.openUri("https://t.me/ttgt1bot")
+                            },
+                            leadingIcon = { Icon(R.drawable.feedback) }
+                        )
 
                         DropdownMenuItem({ Text(stringResource(R.string.about)) }, {
+                            showMenu = false
                             scope.launch {
                                 about.show()
                             }
-                            showMenu = false
-                        })
+                        }, leadingIcon = { Icon(R.drawable.info) })
                     }
                 }
             }
@@ -988,7 +1027,9 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                                             applyOverrides,
                                             { applyOverrides = !applyOverrides }
                                         )
-                                    })
+                                    },
+                                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                                )
                             }
                         }
                     }

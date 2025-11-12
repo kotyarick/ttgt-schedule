@@ -56,8 +56,6 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.firstOrNull
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import ttgt.schedule.Icon
 import ttgt.schedule.R
@@ -146,19 +144,10 @@ fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
                             val schedule = getOrNull()
 
                             if (!isFailure) {
-                                val overrides = runCatching {
-                                    Client.overrides(itemName)
-                                }.let {
-                                    it.exceptionOrNull()?.printStackTrace()
-
-                                    it.getOrNull()
-                                }
-
                                 context.settingsDataStore.updateData {
                                     it.toBuilder().editProfile(loginAs) {
                                         setSchedule(schedule)
-                                            .setOverrides(overrides)
-                                            .setName(selectedGroup)
+                                            .setName(itemName)
                                     }
                                         .setLastUsed(loginAs).build()
                                 }
