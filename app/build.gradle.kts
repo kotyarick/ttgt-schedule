@@ -22,15 +22,19 @@ android {
 
     buildTypes {
         debug {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
             versionNameSuffix = " (debug)"
             applicationIdSuffix = ".debug"
+            proguardFiles(
+                "proguard-rules.pro",
+                //getDefaultProguardFile("proguard-android-optimize.txt")
+            )
         }
 
         release {
             isMinifyEnabled = true
             proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
+                //getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }

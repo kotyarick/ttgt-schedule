@@ -15,6 +15,7 @@ message LessonUserData {
 message WidgetSettings {
   float background = 1;
   uint32 innerPadding = 2;
+  ProfileType profileType = 3;
 }
 
 message Profile {
@@ -34,6 +35,11 @@ enum ProfileType {
 	STUDENT = 2;
 }
 
+message OverrideHistoryElement {
+	Overrides overrides = 1;
+	string itemName = 2;
+}
+
 message UserData {
   reserved 1, 2, 3, 5;
   
@@ -42,4 +48,7 @@ message UserData {
   
   Profiles profiles = 7;
   ProfileType lastUsed = 8;
+  repeated OverrideHistoryElement overrideHistory = 9;
+  int64 firstTimeLaunch = 10;
+  bool feedbackSent = 11;
 }

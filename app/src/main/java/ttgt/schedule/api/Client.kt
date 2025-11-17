@@ -4,6 +4,8 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.get
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.encodeURLPath
@@ -32,6 +34,8 @@ object Client {
     val http = HttpClient(CIO) {
         defaultRequest {
             host = "ttgt-api-isxb.onrender.com"
+            //host = "192.168.0.114"
+            //port = 8000
         }
     }
 
@@ -41,15 +45,18 @@ object Client {
     suspend fun schedule(itemName: String) = http.get("/schedule/$itemName/schedule".encodeURLPath()).schedule()
     suspend fun overrides(itemName: String) = http.get("/schedule/$itemName/overrides".encodeURLPath()).overrides()
     suspend fun updates(): Update = http.get("/schedule/android/updates").to()
+    suspend fun sendCrashLogs(logs: String) = http.post("/schedule/crash") {
+        setBody(logs)
+    }
 }
 
 fun Profiles.profile(lastUsed: ProfileType?): Profile? = when (lastUsed) {
-    ProfileType.STUDENT -> student
-    ProfileType.TEACHER -> teacher
+    ProfileType.STUDENT -> if (hasStudent()) student else teacher
+    ProfileType.TEACHER -> if (hasTeacher()) teacher else student
     else -> {
         when {
-            hasTeacher() -> teacher
             hasStudent() -> student
+            hasTeacher() -> teacher
             else -> null
         }
     }

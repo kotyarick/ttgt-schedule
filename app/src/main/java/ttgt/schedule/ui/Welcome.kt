@@ -1,7 +1,10 @@
 package ttgt.schedule.ui
 
+import android.content.pm.ApplicationInfo
+import android.view.KeyEvent.ACTION_DOWN
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +19,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonColors
@@ -47,10 +52,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
@@ -87,24 +99,39 @@ fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
     var teacherQuery by remember { mutableStateOf("") }
     var selectedTeacher by remember { mutableStateOf("") }
 
+    val filteredTeachers = if (loginAs == ProfileType.TEACHER) teachers.filter { teacher ->
+        if (teacherQuery.isBlank()) return@filter true
+
+        fun String.normalize() = lowercase()
+            .replace(" ", "")
+            .replace(".", "")
+
+        teacher
+            .normalize()
+            .contains(
+                teacherQuery
+                    .normalize()
+            )
+    } else emptyList()
+
     LaunchedEffect(changeToRefresh) {
-        scope.launch(Dispatchers.IO) {
-            try {
-                val items = Client.items()
+        groups.clear()
+        teachers.clear()
 
-                groups.clear()
-                groups.addAll(items.groups)
-
-                teachers.clear()
-                teachers.addAll(items.teachers)
-            } catch (error: Throwable) {
-                error.printStackTrace()
-                isError = true
-            }
+        try {
+            Client.items()
+        } catch (error: Throwable) {
+            error.printStackTrace()
+            isError = true
+            null
+        }?.let { items ->
+            groups.addAll(items.groups)
+            teachers.addAll(items.teachers)
         }
     }
 
     var course by remember { mutableIntStateOf(0) }
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     Scaffold(
         topBar = {
@@ -133,7 +160,7 @@ fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
 
                     val itemName = if (loginAs == ProfileType.TEACHER) selectedTeacher else selectedGroup
 
-                    scope.launch(Dispatchers.IO) {
+                    scope.launch {
                         runCatching {
                             Client.schedule(itemName)
                         }.apply {
@@ -156,9 +183,7 @@ fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
                     }.invokeOnCompletion {
                         continueLoading = false
 
-                        runOnUiThread {
-                            if (!erroring) goToSchedule()
-                        }
+                        if (!erroring) goToSchedule()
                     }
                 }) {
                     if (continueLoading) {
@@ -245,6 +270,15 @@ fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
                             Modifier.fillMaxWidth(),
                             label = { Text(stringResource(R.string.search)) },
                             maxLines = 1,
+                            keyboardOptions = KeyboardOptions(
+                                imeAction = ImeAction.Search
+                            ),
+                            keyboardActions = KeyboardActions {
+                                keyboardController?.hide()
+                                if (filteredTeachers.size == 1) {
+                                    selectedTeacher = filteredTeachers.first()
+                                }
+                            },
                             leadingIcon = { Icon(R.drawable.search) },
                             colors = TextFieldDefaults.colors(
                                 disabledIndicatorColor = Color.Transparent,
@@ -267,22 +301,6 @@ fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
                 when {
                     loginAs == ProfileType.TEACHER && teachers.isNotEmpty() -> {
                         LazyColumn {
-                            val filteredTeachers = teachers.filter { teacher ->
-                                if (!teacher.contains(".")) return@filter false
-                                if (teacherQuery.isBlank()) return@filter true
-
-                                fun String.normalize() = lowercase()
-                                    .replace(" ", "")
-                                    .replace(".", "")
-
-                                teacher
-                                    .normalize()
-                                    .contains(
-                                        teacherQuery
-                                            .normalize()
-                                    )
-                            }.sorted()
-
                             items(filteredTeachers.size) { index ->
                                 val teacher = filteredTeachers[index]
 
@@ -297,6 +315,7 @@ fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
                                     },
                                     Modifier.clickable {
                                         selectedTeacher = teacher
+                                        keyboardController?.hide()
                                     },
                                     colors = ListItemDefaults.colors().copy(
                                         containerColor = Color.Transparent
@@ -315,46 +334,50 @@ fun Welcome(goToSchedule: () -> Unit) = ScheduleTheme {
                     loginAs == ProfileType.STUDENT && groups.isNotEmpty() -> {
                         Box(
                             Modifier
-                                .padding(10.dp)
                                 .verticalScroll(rememberScrollState())
                         ) {
-                            FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(5.dp),
-                                verticalArrangement = Arrangement.spacedBy(5.dp)
+                            Box(
+                                Modifier
+                                    .padding(10.dp)
                             ) {
-                                groups.sorted().forEach { group ->
-                                    if (course != 0 && !group.contains("-$course-")) return@forEach
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                                ) {
+                                    groups.forEach { group ->
+                                        if (course != 0 && !group.contains("-$course-")) return@forEach
 
-                                    Card(
-                                        { selectedGroup = group },
-                                        Modifier
-                                            .border(
-                                                width = 1.dp,
-                                                color = if (selectedGroup == group) MaterialTheme.colorScheme.inversePrimary else Color.Black,
-                                                shape = RoundedCornerShape(5.dp)
-                                            )
-                                            .weight(1F),
-                                        shape = RoundedCornerShape(5.dp),
-                                        colors = CardDefaults.cardColors(
-                                            containerColor = if (selectedGroup == group)
-                                                MaterialTheme.colorScheme.primary else Color.Transparent
-                                        )
-                                    ) {
-                                        Box(
+                                        Card(
+                                            { selectedGroup = group },
                                             Modifier
-                                                .padding(
-                                                    horizontal = if (selectedGroup == group) 10.dp else 13.dp,
-                                                    vertical = 13.dp
+                                                .border(
+                                                    width = 1.dp,
+                                                    color = if (selectedGroup == group) MaterialTheme.colorScheme.inversePrimary else Color.Black,
+                                                    shape = RoundedCornerShape(5.dp)
                                                 )
-                                                .fillMaxWidth(),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                group,
-                                                textAlign = TextAlign.Center,
-                                                fontWeight = if (selectedGroup == group) FontWeight.Bold
-                                                else FontWeight.Normal
+                                                .weight(1F),
+                                            shape = RoundedCornerShape(5.dp),
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = if (selectedGroup == group)
+                                                    MaterialTheme.colorScheme.primary else Color.Transparent
                                             )
+                                        ) {
+                                            Box(
+                                                Modifier
+                                                    .padding(
+                                                        horizontal = if (selectedGroup == group) 10.dp else 13.dp,
+                                                        vertical = 13.dp
+                                                    )
+                                                    .fillMaxWidth(),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    group,
+                                                    textAlign = TextAlign.Center,
+                                                    fontWeight = if (selectedGroup == group) FontWeight.Bold
+                                                    else FontWeight.Normal
+                                                )
+                                            }
                                         }
                                     }
                                 }

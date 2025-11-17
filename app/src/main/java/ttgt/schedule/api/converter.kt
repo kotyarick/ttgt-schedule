@@ -9,6 +9,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import ttgt.schedule.proto.CommonLesson
+import ttgt.schedule.proto.Date
 import ttgt.schedule.proto.Day
 import ttgt.schedule.proto.Lesson
 import ttgt.schedule.proto.Override
@@ -17,6 +18,7 @@ import ttgt.schedule.proto.Schedule
 import ttgt.schedule.proto.SubgroupedLesson
 import ttgt.schedule.proto.SubgroupedLessonData
 import ttgt.schedule.proto.Week
+
 
 private fun JsonElement.lesson(): Lesson {
     if (toString() == "null")
@@ -78,6 +80,13 @@ suspend fun HttpResponse.overrides(): Overrides {
         )
         .setWeekDay(overrides["weekDay"]?.jsonPrimitive?.intOrNull ?: 0)
         .setWeekNum(overrides["weekNum"]?.jsonPrimitive?.intOrNull ?: 0)
+        .setDate(
+            Date.newBuilder()
+                .setDay(overrides["day"]?.jsonPrimitive?.intOrNull ?: 0)
+                .setMonth(overrides["month"]?.jsonPrimitive?.intOrNull ?: 0)
+                .setYear(overrides["year"]?.jsonPrimitive?.intOrNull ?: 0)
+                .build()
+        )
         .build()
 }
 
@@ -92,7 +101,7 @@ suspend fun HttpResponse.schedule(): Schedule {
                         week.jsonObject["days"]?.jsonArray?.map { day ->
                             Day.newBuilder()
                                 .addAllLesson(
-                                    day.jsonObject["lesson"]?.jsonArray?.map { lesson ->
+                                    day.jsonObject["lessons"]?.jsonArray?.map { lesson ->
                                         lesson.lesson()
                                     }
                                 )

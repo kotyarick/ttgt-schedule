@@ -7,10 +7,18 @@ import "schedule.proto";
 import "google/protobuf/empty.proto";
 
 
+message Date {
+	int32 day = 1;
+	int32 month = 2;
+	int32 year = 3;
+}
+
+
 message Overrides {
   repeated Override overrides = 1;
   int32 weekNum = 2;
   int32 weekDay = 3;
+  Date date = 4;
 }
 
 message Override {

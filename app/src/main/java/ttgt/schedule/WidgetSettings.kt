@@ -85,9 +85,9 @@ class WidgetSettings : ComponentActivity() {
         }
 
         val settings = runBlocking {
-            settingsDataStore.data.map {
-                it.widgetsMap
-            }.firstOrNull()?.takeIf { it.containsKey(appWidgetId) }?.getValue(appWidgetId)
+            getSetting { widgetsMap }
+                ?.takeIf { it.containsKey(appWidgetId) }
+                ?.getValue(appWidgetId)
         }
 
         setContent {

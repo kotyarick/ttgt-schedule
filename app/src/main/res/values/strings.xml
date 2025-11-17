@@ -21,12 +21,12 @@
     <string name="loading">Загрузка…</string>
     <string name="change_group">Поменять группу</string>
     <string name="class_hour">Классный час</string>
-    <string name="check_overrides">Проверить изменения</string>
-    <string name="apply_overrides">Учитывать изменения в расписании</string>
-    <string name="checking_overrides">Проверяем изменения…</string>
-    <string name="overrides_retrieve_error">Не удалось проверить изменения, проверь их на сайте</string>
-    <string name="no_overrides">Изменений нет или они не выставлены, перепроверь на сайте</string>
-    <string name="overrides_detected">Найдены изменения в расписании, возможны неточности </string>
+    <string name="check_overrides">Проверить замены</string>
+    <string name="apply_overrides">Учитывать замены в расписании</string>
+    <string name="checking_overrides">Проверяем замены…</string>
+    <string name="overrides_retrieve_error">Не удалось проверить замены, проверь их на сайте</string>
+    <string name="no_overrides">Замен нет или они не выставлены, перепроверь на сайте</string>
+    <string name="overrides_detected">Найдены замены в расписании, возможны неточности </string>
     <string name="about">О приложении</string>
     <string name="app_version">Версия: %1$s</string>
     <string name="changelog">Что нового:</string>
@@ -48,4 +48,12 @@
     <string name="time">Время</string>
     <string name="subgroup">Подгруппа:</string>
     <string name="feedback">Обратная связь</string>
+    <string name="switch_profile">Сменить профиль</string>
+    <string name="overrides_history">История замен</string>
+    <string name="clearHistory">Очистить историю</string>
+    <string name="delete">Удалить</string>
+    <string name="delete_history_alert">Удалить все замены для всех профилей навсегда?</string>
+    <string name="feedback_confirm">Оставить отзыв</string>
+    <string name="feedback_please">Понравилось приложение? Мы готовы услышать критику.</string>
+    <string name="feedback_deny">Нет</string>
 </resources>

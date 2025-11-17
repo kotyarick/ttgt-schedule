@@ -3,9 +3,13 @@ package ttgt.schedule.ui.widgets
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
+import android.os.Build
 import android.util.TypedValue
+import android.view.View
 import android.widget.RemoteViews
+import androidx.compose.material3.pulltorefresh.PullToRefreshState
 import androidx.core.util.TypedValueCompat.dpToPx
+import androidx.glance.Visibility
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
@@ -15,6 +19,7 @@ import ttgt.schedule.getLessonData
 import ttgt.schedule.isEmpty
 import ttgt.schedule.name
 import ttgt.schedule.api.profile
+import ttgt.schedule.getSetting
 import ttgt.schedule.proto.Lesson
 import ttgt.schedule.proto.ProfileType
 import ttgt.schedule.proto.Schedule
@@ -36,7 +41,7 @@ private fun RemoteViews.addLessonView(
 
     view.setTextViewText(
         R.id.name,
-        lesson.name.ifBlank { "Нет пары" }
+        lesson.name
     )
 
     view.setTextViewText(
@@ -100,23 +105,11 @@ class ScheduleWidget : AppWidgetProvider() {
         val views = RemoteViews(context.packageName, R.layout.schedule_widget)
         var schedule: Schedule?
 
-        val widgetSettings = runBlocking {
-            context.settingsDataStore.data.map {
-                it.widgetsMap
-            }.firstOrNull()
-        }
+        val widgetSettings = runBlocking { context.getSetting { widgetsMap } }
 
-        val lastUsed = runBlocking {
-            context.settingsDataStore.data.map {
-                it.lastUsed
-            }.firstOrNull()
-        }
+        val lastUsed = runBlocking { context.getSetting { lastUsed } }
 
-        val profiles = runBlocking {
-            context.settingsDataStore.data.map {
-                it.profiles
-            }.firstOrNull()
-        }
+        val profiles = runBlocking { context.getSetting { profiles } }
 
         schedule = profiles?.profile(lastUsed)?.schedule
 

@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.Checkbox
@@ -57,6 +58,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -71,33 +73,36 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.firstOrNull
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import ttgt.schedule.DayOfWeek
 import ttgt.schedule.Icon
 import ttgt.schedule.R
 import ttgt.schedule.api.Client
-import ttgt.schedule.api.Update
 import ttgt.schedule.datastoreKey
 import ttgt.schedule.dayOfWeek
 import ttgt.schedule.api.editProfile
 import ttgt.schedule.getLessonData
 import ttgt.schedule.isEmpty
 import ttgt.schedule.api.profile
+import ttgt.schedule.display
+import ttgt.schedule.getSetting
+import ttgt.schedule.name
 import ttgt.schedule.proto.Lesson
 import ttgt.schedule.proto.LessonUserData
+import ttgt.schedule.proto.OverrideHistoryElement
 import ttgt.schedule.proto.Overrides
+import ttgt.schedule.proto.Profile
 import ttgt.schedule.proto.ProfileType
 import ttgt.schedule.proto.Profiles
 import ttgt.schedule.proto.Schedule
 import ttgt.schedule.settingsDataStore
+import ttgt.schedule.sortString
+import ttgt.schedule.ui.sheets.About
+import ttgt.schedule.ui.sheets.OverrideHistoryDisplay
 import ttgt.schedule.ui.theme.ScheduleTheme
 import ttgt.schedule.updateWidgets
 import ttgt.schedule.vector
@@ -106,6 +111,7 @@ import java.util.Calendar
 import kotlin.time.ExperimentalTime
 
 const val TAB_AMOUNT = 5
+const val FEEDBACK_URL = "https://t.me/ttgt1bot"
 
 val startOfYear: Calendar = Calendar.getInstance().apply {
     set(Calendar.YEAR, 2025)
@@ -117,7 +123,6 @@ fun weekNum() = weekNum(
 )
 
 fun weekNum(inputDate: Calendar): Boolean {
-    //inputDate.add(Calendar.DAY_OF_YEAR, -1)
     var out = true
 
     val currentDate = Calendar.getInstance().apply { time = startOfYear.time }
@@ -129,6 +134,9 @@ fun weekNum(inputDate: Calendar): Boolean {
 
         currentDate.add(Calendar.DAY_OF_YEAR, 1)
     }
+
+    if (inputDate.dayOfWeek == DayOfWeek.SUNDAY.ordinal)
+        out = !out
 
     return out
 }
@@ -145,6 +153,36 @@ enum class LoadingState {
 fun Long.timestamp(): Calendar = Calendar.getInstance().apply {
     timeInMillis = this@timestamp
 }
+
+@Preview
+@Composable
+fun MenuTest() {
+    Box(Modifier.size(256.dp)) {
+        Box {
+            DropdownMenu(true, { }) {
+                DropdownMenuItem({ Text("Icon") }, {}, leadingIcon = { Icon(R.drawable.info) })
+                DropdownMenuItem({ Text("Load") }, {}, leadingIcon = {
+                    Box(Modifier.padding(2.dp)) {
+                        CircularProgressIndicator(
+                            Modifier.size(21.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                })
+            }
+        }
+    }
+}
+
+fun isAtLeastOneWeekAfter(timestamp: Long): Boolean {
+    val calendar = Calendar.getInstance()
+    val currentTime = calendar.timeInMillis / 1000 // Convert to seconds
+
+    val oneWeekInSeconds = 7 * 24 * 60 * 60 // 7 days in seconds
+    return currentTime - timestamp >= oneWeekInSeconds
+}
+
+fun currentTimestamp() = Calendar.getInstance().timeInMillis / 1000
 
 @OptIn(ExperimentalMaterial3Api::class)
 object NoWeekendsSelectableDates : SelectableDates {
@@ -194,23 +232,6 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
     )
     var showDatePicker by remember { mutableStateOf(false) }
 
-    var versionInfo: Update? by remember { mutableStateOf(null) }
-    var versionLoadingState by remember { mutableStateOf(LoadingState.PreLoading) }
-
-    val packageInfo = remember {
-        context
-            .packageManager
-            .getPackageInfo(context.packageName, 0)
-    }
-
-    val versionName = remember {
-        packageInfo.versionName ?: "0"
-    }
-
-    val versionCode = remember {
-        packageInfo.versionCode
-    }
-
     val snackbarHostState = remember { SnackbarHostState() }
 
     var lastUsed by remember { mutableStateOf(ProfileType.TEACHER) }
@@ -248,6 +269,12 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
     }
 
     var profiles: Profiles? by remember { mutableStateOf(null) }
+    var profile: Profile? by remember { mutableStateOf(null) }
+
+    val overrideHistory = remember { mutableStateListOf<OverrideHistoryElement>() }
+    val overrideHistorySheet = rememberModalBottomSheetState(true)
+    var askForFeedback by remember { mutableStateOf(false) }
+
 
     fun snackbar(text: String) = scope.launch {
         snackbarHostState.currentSnackbarData?.dismiss()
@@ -266,261 +293,6 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
 
             SnackbarResult.Dismissed -> {}
         }
-    }
-
-    fun checkUpdate() = scope.launch {
-        runCatching {
-            Client.updates()
-        }.apply {
-            exceptionOrNull()?.printStackTrace()
-            runOnUiThread {
-                if (isSuccess) {
-                    versionInfo = getOrNull()
-                    versionLoadingState = LoadingState.Done
-
-                    if ((versionInfo?.versionCode ?: -1) != versionCode) {
-                        scope.launch {
-                            about.show()
-                        }
-                    }
-                } else {
-                    versionLoadingState = LoadingState.Error
-                }
-            }
-
-        }
-    }
-
-    LaunchedEffect(versionLoadingState) {
-        if (versionLoadingState != LoadingState.PreLoading) return@LaunchedEffect
-
-        versionLoadingState = LoadingState.Loading
-
-        checkUpdate()
-    }
-
-    if (about.isVisible || about.isAnimationRunning) {
-        ModalBottomSheet(
-            onDismissRequest = {
-                scope.launch { about.hide() }
-            },
-            sheetState = about
-        ) {
-            Column(Modifier.padding(horizontal = 16.dp)) {
-                Text(
-                    stringResource(R.string.app_name),
-                    Modifier.fillMaxWidth(),
-                    style = MaterialTheme.typography.displaySmall,
-                    textAlign = TextAlign.Center
-                )
-
-                Text(
-                    stringResource(
-                        R.string.app_version,
-                        context
-                            .packageManager
-                            .getPackageInfo(context.packageName, 0)
-                            .versionName ?: "0"
-                    ),
-                    Modifier.fillMaxWidth(),
-                    style = MaterialTheme.typography.headlineSmall,
-                    textAlign = TextAlign.Center
-                )
-
-                Text(
-                    stringResource(
-                        R.string.changelog,
-                        versionName
-                    ),
-                    Modifier.fillMaxWidth(),
-                    style = MaterialTheme.typography.labelLarge
-                )
-
-                if (versionInfo != null) {
-                    Text(versionInfo?.changelog ?: "")
-
-                    if (versionCode == versionInfo?.versionCode) {
-                        ListItem(
-                            {
-                                Text(stringResource(R.string.current_version_latest))
-                            },
-                            leadingContent = {
-                                Icon(R.drawable.done)
-                            },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                        )
-                    } else {
-                        Button({
-                            scope.launch {
-                                uriHandler.openUri(Client.downloadUpdateUrl)
-                            }
-                        }, Modifier.fillMaxWidth()) {
-                            Text(
-                                stringResource(
-                                    R.string.download_update,
-                                    versionInfo?.versionCode ?: 0
-                                )
-                            )
-                        }
-                    }
-                }
-
-                when (versionLoadingState) {
-                    LoadingState.Loading -> {
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            CircularProgressIndicator()
-                        }
-                    }
-
-                    LoadingState.Error -> ListItem(
-                        {
-                            Text(stringResource(R.string.error))
-                        },
-                        trailingContent = {
-                            Icon(R.drawable.refresh)
-                        },
-                        modifier = Modifier.clickable {
-                            versionLoadingState = LoadingState.PreLoading
-                        },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                    )
-
-                    else -> {}
-                }
-            }
-        }
-    }
-
-    fun checkOverrides(onDone: (Boolean) -> Unit) {
-        if (overridesChecking) return
-        overridesChecking = true
-
-        scope.launch(Dispatchers.IO) {
-            runCatching {
-                val profile = profiles?.profile(lastUsed) ?: return@runCatching null
-
-                Client.overrides(profile.name)
-            }.apply {
-                exceptionOrNull()?.printStackTrace()
-
-                runOnUiThread {
-                    overrides = getOrNull()
-                    overridesChecking = false
-                    onDone(isFailure)
-                }
-                if (isSuccess) {
-                    context.settingsDataStore.updateData {
-                        it.toBuilder().editProfile(lastUsed) {
-                            setOverrides(
-                                overrides ?: Overrides.newBuilder().build()
-                            )
-                        }.build()
-                    }
-                }
-            }
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        var lastUsedTmp: ProfileType? = null
-        var profilesTmp: Profiles? = null
-
-        scope.launch {
-            lastUsedTmp = context.settingsDataStore.data.map { it.lastUsed }.firstOrNull()
-            profilesTmp = context.settingsDataStore.data.map { it.profiles }.firstOrNull()
-        }.invokeOnCompletion {
-            lastUsed = lastUsedTmp ?: ProfileType.STUDENT
-            profiles = profilesTmp
-
-            val profile = profiles!!.profile(lastUsed)!!
-
-            schedule = profile.schedule
-            overrides = profile.overrides
-
-            if (overrides?.takeIf { it.overridesCount > 0 } == null) {
-                checkOverrides { }
-            }
-        }
-    }
-
-    fun backPress() {
-        if (isToday && (overrides?.overridesCount ?: 0) > 0) {
-            overrides?.let { overrides ->
-                isSelectedWeekEven = overrides.weekNum == 1
-
-                scope.launch {
-                    pagerState.animateScrollToPage(
-                        overrides.weekDay
-                    )
-                }
-            }
-        } else {
-            isSelectedWeekEven =
-                if (weekday >= TAB_AMOUNT) !isCurrentWeekEven else isCurrentWeekEven
-
-            scope.launch {
-                pagerState.animateScrollToPage(
-                    weekday.let { weekday ->
-                        if (weekday >= pagerState.pageCount) 0
-                        else weekday
-                    }
-                )
-            }
-        }
-    }
-
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-        scope.launch {
-            checkOverrides { }
-        }
-        isCurrentWeekEven = weekNum()
-        weekday = weekday()
-    }
-
-    if (showDatePicker) {
-        val selectedDateMillis = datePicker.selectedDateMillis
-        val displayedMonthMillis = datePicker.displayedMonthMillis
-
-        fun dismiss() {
-            datePicker.selectedDateMillis = selectedDateMillis
-            datePicker.displayedMonthMillis = displayedMonthMillis
-
-            showDatePicker = false
-        }
-
-        DatePickerDialog(
-            onDismissRequest = { dismiss() },
-            confirmButton = {
-                if (datePicker.selectedDateMillis != null) {
-                    TextButton({
-                        showDatePicker = false
-
-                        datePicker.selectedDateMillis?.timestamp()?.let { date ->
-                            scope.launch {
-                                isSelectedWeekEven = weekNum(date)
-                                pagerState.animateScrollToPage(date.dayOfWeek)
-                            }
-                        }
-                    }) {
-                        Text(stringResource(R.string.jump_to_date_confirm))
-                    }
-                }
-            },
-            dismissButton = {
-                TextButton({ dismiss() }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            },
-            content = {
-                DatePicker(
-                    datePicker,
-                    title = { }
-                )
-            }
-        )
     }
 
     if (lessonInfo.isVisible || lessonInfo.isAnimationRunning) {
@@ -652,6 +424,222 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
             }
         }
     }
+    About(about)
+    OverrideHistoryDisplay(
+        overrideHistorySheet,
+        overrideHistory.filter { it.overrides.overridesCount > 0 && it.itemName == profile?.name },
+        lastUsed == ProfileType.TEACHER
+    ) {
+        overrideHistory.clear()
+    }
+
+    if (askForFeedback) {
+        AlertDialog({
+            askForFeedback = false
+        }, {
+            TextButton({
+                askForFeedback = false
+                scope.launch { context.settingsDataStore.updateData { it.toBuilder().setFeedbackSent(true).build() } }
+                uriHandler.openUri(FEEDBACK_URL)
+            }) {
+                Text(stringResource(R.string.feedback_confirm))
+            }
+        }, text = {
+            Text(stringResource(R.string.feedback_please))
+        }, dismissButton = {
+            TextButton({
+                askForFeedback = false
+            }) {
+                Text(stringResource(R.string.feedback_deny))
+            }
+        })
+    }
+
+    fun checkOverrides(onDone: (Boolean) -> Unit) {
+        if (overridesChecking) return
+        overridesChecking = true
+
+        scope.launch {
+            runCatching {
+                val profile = profiles?.profile(lastUsed) ?: return@runCatching null
+
+                Client.overrides(profile.name)
+            }.apply {
+                exceptionOrNull()?.printStackTrace()
+
+                runOnUiThread {
+                    overridesChecking = false
+                    onDone(isFailure)
+                }
+
+                if (isSuccess) {
+                    overrides = getOrNull()?.toBuilder()
+                        ?.let {
+                            val overs = it.overridesList.map { override ->
+                                override.toBuilder()
+                                    .setShouldBe(
+                                        schedule
+                                            ?.weeksList[it.weekNum]
+                                            ?.daysList[it.weekDay]
+                                            ?.lessonList[override.index]
+                                    )
+                                    .build()
+                            }
+                            it.clearOverrides().addAllOverrides(overs)
+                        }
+                        ?.build()
+
+                    val string = overrides?.date?.sortString()
+                    println()
+                    overrideHistory.map {
+                        """
+                            ${it.itemName} ${it.overrides.date.display()}
+                            ${it.overrides.overridesList.joinToString { 
+                                "${it.index +1}. ${it.shouldBe.name}"
+                            }}
+                        """.trimIndent()
+                    }.forEach(::println)
+
+                    val overrideToAppend = if (
+                        string != null && overrideHistory
+                            .firstOrNull {
+                                it
+                                    .overrides
+                                    .date
+                                    .sortString() == string
+                                        && it.itemName == profile?.name
+                            } == null
+                    ) {
+                        OverrideHistoryElement.newBuilder()
+                            .setOverrides(overrides)
+                            .setItemName(profile!!.name)
+                            .build()
+                    } else {
+                        null
+                    }
+                    println(overrideToAppend)
+                    if (overrideToAppend != null) {
+                        overrideHistory.add(overrideToAppend)
+                    }
+
+                    context.settingsDataStore.updateData {
+                        it.toBuilder().editProfile(lastUsed) {
+                            setOverrides(
+                                overrides ?: Overrides.newBuilder().build()
+                            )
+                        }.let {
+                            if (overrideToAppend != null) {
+                                it.addOverrideHistory(
+                                    overrideToAppend
+                                )
+                            } else it
+                        }.build()
+                    }
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        lastUsed = context.getSetting { this.lastUsed } ?: ProfileType.STUDENT
+        profiles = context.getSetting { this.profiles }
+        overrideHistory.addAll(
+            context.getSetting { overrideHistoryList } ?: emptyList()
+        )
+
+        profile = profiles?.profile(lastUsed) ?: return@LaunchedEffect goToWelcome()
+
+        schedule = profile!!.schedule
+        overrides = profile!!.overrides
+
+        checkOverrides { }
+
+        val sentFeedback = context.getSetting { feedbackSent } ?: false
+        val firstLaunch = context.getSetting { firstTimeLaunch } ?: 0
+
+        if (firstLaunch == 0L) {
+            context.settingsDataStore.updateData { it.toBuilder().setFirstTimeLaunch(currentTimestamp()).build() }
+        } else if (!sentFeedback && isAtLeastOneWeekAfter(firstLaunch)) {
+            askForFeedback = true
+        }
+    }
+
+    fun backPress() {
+        if (isToday && (overrides?.overridesCount ?: 0) > 0) {
+            overrides?.let { overrides ->
+                isSelectedWeekEven = overrides.weekNum == 1
+
+                scope.launch {
+                    pagerState.animateScrollToPage(
+                        overrides.weekDay
+                    )
+                }
+            }
+        } else {
+            isSelectedWeekEven =
+                if (weekday >= TAB_AMOUNT) !isCurrentWeekEven else isCurrentWeekEven
+
+            scope.launch {
+                pagerState.animateScrollToPage(
+                    weekday.let { weekday ->
+                        if (weekday >= pagerState.pageCount) 0
+                        else weekday
+                    }
+                )
+            }
+        }
+    }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        scope.launch {
+            checkOverrides { }
+        }
+        isCurrentWeekEven = weekNum()
+        weekday = weekday()
+    }
+
+    if (showDatePicker) {
+        val selectedDateMillis = datePicker.selectedDateMillis
+        val displayedMonthMillis = datePicker.displayedMonthMillis
+
+        fun dismiss() {
+            datePicker.selectedDateMillis = selectedDateMillis
+            datePicker.displayedMonthMillis = displayedMonthMillis
+
+            showDatePicker = false
+        }
+
+        DatePickerDialog(
+            onDismissRequest = { dismiss() },
+            confirmButton = {
+                if (datePicker.selectedDateMillis != null) {
+                    TextButton({
+                        showDatePicker = false
+
+                        datePicker.selectedDateMillis?.timestamp()?.let { date ->
+                            scope.launch {
+                                isSelectedWeekEven = weekNum(date)
+                                pagerState.animateScrollToPage(date.dayOfWeek)
+                            }
+                        }
+                    }) {
+                        Text(stringResource(R.string.jump_to_date_confirm))
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton({ dismiss() }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+            content = {
+                DatePicker(
+                    datePicker,
+                    title = { }
+                )
+            }
+        )
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -689,7 +677,7 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                                 scope.launch {
                                     profileSwitcherRotationAnimated.animateTo(
                                         180F,
-                                        tween(1000)
+                                        tween(500)
                                     )
                                     profileSwitcherRotationAnimated.snapTo(0F)
                                 }
@@ -762,10 +750,12 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                         },
                             leadingIcon = {
                                 if (overridesChecking) {
-                                    CircularProgressIndicator(
-                                        Modifier.size(20.dp),
-                                        color = MaterialTheme.colorScheme.secondary
-                                    )
+                                    Box(Modifier.padding(2.dp)) {
+                                        CircularProgressIndicator(
+                                            Modifier.size(21.dp),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 } else {
                                     Icon(R.drawable.overrides)
                                 }
@@ -786,13 +776,25 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                             }
                         )
 
+                        if (overrideHistory.isNotEmpty()) {
+                            DropdownMenuItem(
+                                { Text(stringResource(R.string.overrides_history)) },
+                                {
+                                    showMenu = false
+                                    scope.launch { overrideHistorySheet.show() }
+                                },
+                                leadingIcon = { Icon(R.drawable.history) }
+                            )
+                        }
+
                         DropdownMenuItem(
                             {
                                 Text(stringResource(R.string.feedback))
                             },
                             {
                                 showMenu = false
-                                uriHandler.openUri("https://t.me/ttgt1bot")
+                                scope.launch { context.settingsDataStore.updateData { it.toBuilder().setFeedbackSent(true).build() } }
+                                uriHandler.openUri(FEEDBACK_URL)
                             },
                             leadingIcon = { Icon(R.drawable.feedback) }
                         )

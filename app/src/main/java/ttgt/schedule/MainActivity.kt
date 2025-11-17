@@ -9,6 +9,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.annotation.DrawableRes
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.SheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -45,15 +46,15 @@ fun Lesson.isEmpty() = lessonCase in listOf(
 val Lesson.name: String
     get() = commonLesson.name.ifBlank {
         subgroupedLesson.name
-    }
+    }.ifBlank { "Нет пары" }
 
 val Lesson.datastoreKey: String
     get() = "$name $group"
 
 suspend fun Context.getLessonData(lesson: Lesson): LessonUserData? =
-    settingsDataStore.data.map {
-        it.lessonDataMap
-    }.firstOrNull()
+    getSetting {
+        lessonDataMap
+    }
         ?.takeIf { it.containsKey(lesson.datastoreKey) }
         ?.getValue(lesson.datastoreKey)
 
@@ -80,6 +81,13 @@ val Context.settingsDataStore: DataStore<UserData> by dataStore(
     serializer = SettingsSerializer
 )
 
+suspend fun <T> Context.getSetting(block: UserData.() -> T): T? = settingsDataStore.data.map { it.block() }.firstOrNull()
+
+@OptIn(ExperimentalMaterial3Api::class)
+val SheetState.shouldShow: Boolean
+    get() = isAnimationRunning || isVisible
+
+
 @Composable
 fun Icon(@DrawableRes drawable: Int) =
     Icon(drawable.vector, null)
@@ -89,9 +97,9 @@ val Int.vector: ImageVector
     get() = ImageVector.vectorResource(this)
 
 suspend fun Context.updateWidgets() {
-    val widgets = settingsDataStore.data.map {
-        it.widgetsMap
-    }.firstOrNull()?.keys ?: emptyList<Int>()
+    val widgets = getSetting {
+        widgetsMap
+    }?.keys ?: emptyList<Int>()
 
     ScheduleWidget().onUpdate(
         this,
@@ -104,17 +112,21 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Thread.setDefaultUncaughtExceptionHandler(TopExceptionHandler(this))
+
         enableEdgeToEdge()
         setContent {
             val navController = rememberNavController()
             val context = LocalContext.current
             val scope = rememberCoroutineScope()
 
+
+
             NavHost(
                 navController = navController,
                 startDestination = runBlocking {
-                    val profiles = settingsDataStore.data.map { it.profiles }.firstOrNull()
-                    val lastUsed = settingsDataStore.data.map { it.lastUsed }.firstOrNull()
+                    val profiles = getSetting { profiles }
+                    val lastUsed = getSetting { lastUsed }
 
                     if (
                         profiles?.profile(lastUsed) == null
