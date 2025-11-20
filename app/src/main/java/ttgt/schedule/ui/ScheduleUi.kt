@@ -34,6 +34,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -91,6 +92,7 @@ import ttgt.schedule.api.profile
 import ttgt.schedule.display
 import ttgt.schedule.getSetting
 import ttgt.schedule.name
+import ttgt.schedule.proto.CustomLesson
 import ttgt.schedule.proto.Lesson
 import ttgt.schedule.proto.LessonUserData
 import ttgt.schedule.proto.OverrideHistoryElement
@@ -102,6 +104,7 @@ import ttgt.schedule.proto.Schedule
 import ttgt.schedule.settingsDataStore
 import ttgt.schedule.sortString
 import ttgt.schedule.ui.sheets.About
+import ttgt.schedule.ui.sheets.LessonAdd
 import ttgt.schedule.ui.sheets.OverrideHistoryDisplay
 import ttgt.schedule.ui.theme.ScheduleTheme
 import ttgt.schedule.updateWidgets
@@ -223,6 +226,8 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
     var applyOverrides by remember { mutableStateOf(true) }
     var overridesChecking by remember { mutableStateOf(false) }
     val about = rememberModalBottomSheetState()
+    val lessonAdd = rememberModalBottomSheetState()
+    var customLessonEdit by remember { mutableIntStateOf(-1) }
 
     val now = Calendar.getInstance()
 
@@ -274,7 +279,9 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
     val overrideHistory = remember { mutableStateListOf<OverrideHistoryElement>() }
     val overrideHistorySheet = rememberModalBottomSheetState(true)
     var askForFeedback by remember { mutableStateOf(false) }
+    val customLessons = remember { mutableStateListOf<CustomLesson>() }
 
+    val filteredCustomLessons = remember { mutableStateListOf<CustomLesson>() }
 
     fun snackbar(text: String) = scope.launch {
         snackbarHostState.currentSnackbarData?.dismiss()
@@ -432,6 +439,32 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
     ) {
         overrideHistory.clear()
     }
+    LessonAdd(
+        lessonAdd,
+        pagerState.currentPage,
+        isSelectedWeekEven,
+        if (customLessonEdit != -1) {
+            customLessons[customLessonEdit].let {
+                LessonTime(
+                    Time.from(it.startTime),
+                    Time.from(it.endTime)
+                )
+            }
+        } else null,
+        if (customLessonEdit > -1) customLessons[customLessonEdit].name else "",
+        customLessonEdit
+    ) { customLesson ->
+        when {
+            customLesson == null -> customLessons.removeAt(customLessonEdit)
+            customLessonEdit == -1 -> customLessons.add(customLesson)
+            else -> {
+                customLessons[customLessonEdit] = customLesson
+                customLessonEdit = -1
+            }
+        }
+
+        updateItems = !updateItems
+    }
 
     if (askForFeedback) {
         AlertDialog({
@@ -551,6 +584,10 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
 
         schedule = profile!!.schedule
         overrides = profile!!.overrides
+
+        context.getSetting { customLessonsList }?.let {
+            customLessons.addAll(it)
+        }
 
         checkOverrides { }
 
@@ -787,6 +824,16 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                             )
                         }
 
+                        DropdownMenuItem({
+                            Text(stringResource(R.string.add_lesson))
+                        }, {
+                            showMenu = false
+                            scope.launch { lessonAdd.show() }
+                        },
+                            leadingIcon = {
+                                Icon(R.drawable.add)
+                            })
+
                         DropdownMenuItem(
                             {
                                 Text(stringResource(R.string.feedback))
@@ -975,13 +1022,17 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                             .weeksList[if (isSelectedWeekEven) 1 else 0]
                             .daysList[page]
                             .lessonList
+                            .filterIndexed { index, item ->
+                                index < 5 || !item.isEmpty()
+                            }
 
                         // Отступ сверху
                         item { Box {} }
 
                         val timestampType = TimestampType.fromWeekday(page)
+                        val normalLessonSize = list.size + if (timestampType == TimestampType.ClassHour) 1 else 0
 
-                        items(list.size + if (timestampType == TimestampType.ClassHour) 1 else 0) { i ->
+                        items(normalLessonSize) { i ->
                             val index =
                                 i - if (timestampType == TimestampType.ClassHour && i > 3) 1 else 0
 
@@ -1005,6 +1056,36 @@ fun ScheduleUi(goToWelcome: () -> Unit) = ScheduleTheme {
                                         }
                                     }
                                 }
+                            }
+                        }
+
+                        println("""
+                            --- /// ---
+                        $updateItems
+                        """.trimIndent())
+
+                        filteredCustomLessons.addAll(
+                            customLessons.filter {
+                                it.weeknum == isCurrentWeekEven && it.weekday == pagerState.currentPage
+                            }.sortedBy { Time.from(it.startTime) }
+                        )
+
+                        if (filteredCustomLessons.isNotEmpty()) {
+                            item {
+                                HorizontalDivider()
+                            }
+                        }
+
+                        items(filteredCustomLessons.size) {
+                            val lesson = filteredCustomLessons[it]
+
+                            CustomLessonItem(
+                                lesson,
+                                normalLessonSize + it,
+                                isToday,
+                            ) {
+                                customLessonEdit = it
+                                scope.launch { lessonAdd.show() }
                             }
                         }
 

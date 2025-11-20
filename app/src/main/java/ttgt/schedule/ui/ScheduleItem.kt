@@ -36,6 +36,7 @@ import kotlinx.coroutines.delay
 import ttgt.schedule.R
 import ttgt.schedule.getLessonData
 import ttgt.schedule.isEmpty
+import ttgt.schedule.proto.CustomLesson
 import ttgt.schedule.proto.Lesson
 import ttgt.schedule.vector
 import java.lang.System.currentTimeMillis
@@ -46,13 +47,22 @@ fun Int.pad() = if (this < 10) "0$this" else this.toString()
 data class Time(
     val hours: Int,
     val minutes: Int
-) {
+) : Comparable<Time> {
     operator fun compareTo(time: Long): Int =
         (hours * 60 + minutes) - Date(time).let { date ->
             date.hours * 60 + date.minutes
         }
 
     override fun toString() = hours.pad() + ":" + minutes.pad()
+
+    fun proto() = ttgt.schedule.proto.Time.newBuilder().setHours(hours).setMinutes(minutes).build()
+
+    override fun compareTo(other: Time): Int =
+        (hours * 60 + minutes) - (other.hours * 60 + other.minutes)
+
+    companion object {
+        fun from(proto: ttgt.schedule.proto.Time) = Time(proto.hours, proto.minutes)
+    }
 }
 
 data class LessonTime(
@@ -94,6 +104,92 @@ fun ClassHour(isCurrent: Boolean) {
                     time.toString(),
                     color = MaterialTheme.colorScheme.secondary
                 )
+            }
+        }
+    }
+}
+
+@Composable fun CustomLessonItem(
+    lesson: CustomLesson,
+    index: Int,
+    isToday: Boolean,
+    onClick: () -> Unit
+) {
+    val time = LessonTime(
+        Time.from(lesson.startTime),
+        Time.from(lesson.endTime)
+    )
+
+    var isCurrent by remember {
+        mutableStateOf(false)
+    }
+
+    LaunchedEffect(Unit) {
+        if (isToday) {
+            while (true) {
+                isCurrent = time.isNow()
+
+                delay(1000)
+            }
+        }
+    }
+
+    var twoLined: Boolean? by remember { mutableStateOf(null) }
+
+    Card(
+        onClick,
+        Modifier
+            .fillMaxWidth()
+            .clip(CardDefaults.shape),
+        colors = if (isCurrent) CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        ) else CardDefaults.cardColors()
+    ) {
+        Box {
+            Row(
+                Modifier
+                    .padding(15.dp)
+            ) {
+                Text(
+                    "${index + 1}.",
+                    color = MaterialTheme.colorScheme.secondary
+                )
+
+                Spacer(Modifier.width(10.dp))
+
+                Column(Modifier.width(200.dp)) {
+                    Text(lesson.name, fontWeight = FontWeight.Bold)
+                }
+
+                Spacer(Modifier.weight(1F))
+
+                Column(Modifier.fillMaxHeight(), horizontalAlignment = Alignment.End) {
+                    Text(
+                        time.toString(),
+                        color = MaterialTheme.colorScheme.secondary,
+                        textAlign = TextAlign.End,
+                        onTextLayout = { result ->
+                            if (twoLined == null) {
+                                twoLined = result.lineCount >= 2
+                            }
+                        }
+                    )
+
+                    Column(
+                        Modifier.fillMaxHeight(),
+                        verticalArrangement = Arrangement.Bottom
+                    ) {
+                        Spacer(Modifier.fillMaxHeight())
+
+                        androidx.compose.material3.Icon(
+                            R.drawable.edit.vector,
+                            null,
+                            Modifier
+                                .size(20.dp)
+                                .alpha(0.7F)
+                        )
+                    }
+                }
             }
         }
     }

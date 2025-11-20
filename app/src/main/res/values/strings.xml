@@ -56,4 +56,12 @@
     <string name="feedback_confirm">Оставить отзыв</string>
     <string name="feedback_please">Понравилось приложение? Мы готовы услышать критику.</string>
     <string name="feedback_deny">Нет</string>
+    <string name="add_lesson">Добавить курс</string>
+    <string name="lesson_start_time">Начало курса</string>
+    <string name="lesson_end_time">Конец курса</string>
+    <string name="name_is_empty">Введите название курса</string>
+    <string name="weekday">День недели</string>
+    <string name="weeknum">Номер недели</string>
+    <string name="ok">ОК</string>
+    <string name="edit_lesson">Изменить курс</string>
 </resources>

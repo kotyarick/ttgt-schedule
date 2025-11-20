@@ -40,6 +40,19 @@ message OverrideHistoryElement {
 	string itemName = 2;
 }
 
+message Time {
+	int32 hours = 1;
+	int32 minutes = 2;
+}
+
+message CustomLesson {
+	string name = 1;
+	Time startTime = 2;
+	Time endTime = 3;
+	bool weeknum = 4;
+	int32 weekday = 5;
+}
+
 message UserData {
   reserved 1, 2, 3, 5;
   
@@ -51,4 +64,5 @@ message UserData {
   repeated OverrideHistoryElement overrideHistory = 9;
   int64 firstTimeLaunch = 10;
   bool feedbackSent = 11;
+  repeated CustomLesson customLessons = 12;
 }
